@@ -1,0 +1,35 @@
+# ESNODE | Source Available BUSL-1.1 | Copyright (c) 2024 Estimatedstocks AB
+[package]
+name = "agent-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "agent_core"
+path = "src/lib.rs"
+
+[features]
+default = ["gpu"]
+gpu = ["nvml-wrapper"]
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.7"
+prometheus = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+humantime-serde = "1"
+sysinfo = "0.29"
+thiserror = "1"
+tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "signal", "time", "fs", "io-util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+tokio-stream = "0.1"
+futures = "0.3"
+libc = "0.2"
+
+[dependencies.nvml-wrapper]
+version = "0.9"
+optional = true

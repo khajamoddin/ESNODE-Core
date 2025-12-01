@@ -1,0 +1,273 @@
+// ESNODE | Source Available BUSL-1.1 | Copyright (c) 2024 Estimatedstocks AB
+mod collectors;
+pub mod config;
+mod http;
+pub mod metrics;
+pub mod state;
+pub mod tsdb;
+
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Instant;
+
+use anyhow::Context;
+use collectors::{
+    cpu::CpuCollector, disk::DiskCollector, gpu::GpuCollector, memory::MemoryCollector,
+    network::NetworkCollector, numa::NumaCollector, power::PowerCollector, Collector,
+};
+pub use config::{AgentConfig, ConfigOverrides, LogLevel};
+use http::{build_router, serve, HttpState};
+use metrics::MetricsRegistry;
+use tokio::signal;
+use tokio::sync::Mutex;
+use tracing::{info, warn};
+use tsdb::{samples_from_registry, LocalTsdb, LocalTsdbConfig};
+
+pub struct Agent {
+    config: AgentConfig,
+    metrics: MetricsRegistry,
+    collectors: Vec<Box<dyn Collector>>,
+    healthy: Arc<AtomicBool>,
+    status: state::StatusState,
+    local_tsdb: Option<Arc<LocalTsdb>>,
+}
+
+impl Agent {
+    pub fn new(config: AgentConfig) -> anyhow::Result<Self> {
+        let metrics = MetricsRegistry::new()?;
+        let healthy = Arc::new(AtomicBool::new(true));
+        let status = state::StatusState::new(healthy.clone());
+        let mut collectors: Vec<Box<dyn Collector>> = Vec::new();
+
+        if config.enable_cpu {
+            info!("CPU collector enabled");
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["cpu"])
+                .set(0.0);
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["numa"])
+                .set(0.0);
+            collectors.push(Box::new(CpuCollector::new(status.clone())));
+            collectors.push(Box::new(NumaCollector::new()));
+        } else {
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["cpu"])
+                .set(1.0);
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["numa"])
+                .set(1.0);
+        }
+        if config.enable_memory {
+            info!("Memory collector enabled");
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["memory"])
+                .set(0.0);
+            collectors.push(Box::new(MemoryCollector::new(status.clone())));
+        } else {
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["memory"])
+                .set(1.0);
+        }
+        if config.enable_disk {
+            info!("Disk collector enabled");
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["disk"])
+                .set(0.0);
+            collectors.push(Box::new(DiskCollector::new(status.clone())));
+        } else {
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["disk"])
+                .set(1.0);
+        }
+        if config.enable_network {
+            info!("Network collector enabled");
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["network"])
+                .set(0.0);
+            collectors.push(Box::new(NetworkCollector::new(status.clone())));
+        } else {
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["network"])
+                .set(1.0);
+        }
+        if config.enable_gpu {
+            let (collector, warning) = GpuCollector::new(status.clone());
+            if let Some(msg) = warning {
+                warn!("{msg}");
+                metrics
+                    .agent_collector_disabled
+                    .with_label_values(&["gpu"])
+                    .set(1.0);
+            } else {
+                metrics
+                    .agent_collector_disabled
+                    .with_label_values(&["gpu"])
+                    .set(0.0);
+            }
+            collectors.push(Box::new(collector));
+        } else {
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["gpu"])
+                .set(1.0);
+        }
+        if config.enable_power {
+            info!("Power collector enabled");
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["power"])
+                .set(0.0);
+            collectors.push(Box::new(PowerCollector::new(
+                status.clone(),
+                config.node_power_envelope_watts,
+            )));
+        } else {
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["power"])
+                .set(1.0);
+        }
+        let local_tsdb = if config.enable_local_tsdb {
+            info!(
+                "Local TSDB enabled (path={}, retention={}h, max_disk={} MB)",
+                config.local_tsdb_path,
+                config.local_tsdb_retention_hours,
+                config.local_tsdb_max_disk_mb
+            );
+            Some(Arc::new(LocalTsdb::new(LocalTsdbConfig::from(&config))?))
+        } else {
+            None
+        };
+
+        let start_secs = chrono::Utc::now().timestamp() as f64;
+        metrics.agent_running.set(1.0);
+        metrics.agent_start_time_seconds.set(start_secs);
+        let version = env!("CARGO_PKG_VERSION");
+        let commit = option_env!("ESNODE_COMMIT").unwrap_or("unknown");
+        metrics
+            .agent_build_info
+            .with_label_values(&[version, commit])
+            .set(1.0);
+        let agent_label = config.managed_node_id.as_deref().unwrap_or("local");
+        metrics
+            .ai_tokens_per_joule
+            .with_label_values(&[agent_label])
+            .set(0.0);
+        metrics
+            .ai_tokens_per_watt
+            .with_label_values(&[agent_label])
+            .set(0.0);
+        metrics
+            .ai_cost_per_million_tokens_usd
+            .with_label_values(&[agent_label])
+            .set(0.0);
+        metrics
+            .ai_carbon_grams_per_token
+            .with_label_values(&[agent_label])
+            .set(0.0);
+
+        Ok(Agent {
+            config,
+            metrics,
+            collectors,
+            healthy,
+            status,
+            local_tsdb,
+        })
+    }
+
+    pub async fn run(self) -> anyhow::Result<()> {
+        let Agent {
+            config,
+            metrics,
+            collectors,
+            healthy,
+            status,
+            local_tsdb,
+        } = self;
+
+        let shared_collectors = Arc::new(Mutex::new(collectors));
+        let metrics_clone = metrics.clone();
+        let healthy_clone = healthy.clone();
+        let scrape_interval = config.scrape_interval;
+        let status_state = status.clone();
+        let tsdb_for_collection = local_tsdb.clone();
+        let tsdb_for_shutdown = local_tsdb.clone();
+
+        let collection_task = tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(scrape_interval);
+            loop {
+                ticker.tick().await;
+                let ts_ms = chrono::Utc::now().timestamp_millis();
+                let now_ms = ts_ms as u64;
+                let mut guard = shared_collectors.lock().await;
+                let mut all_ok = true;
+
+                for collector in guard.iter_mut() {
+                    let start = Instant::now();
+                    if let Err(err) = collector.collect(&metrics_clone).await {
+                        warn!("collector {} failed: {:?}", collector.name(), err);
+                        metrics_clone.inc_error(collector.name());
+                        status_state.record_error(collector.name(), format!("{:?}", err), now_ms);
+                        all_ok = false;
+                    }
+                    let duration = start.elapsed().as_secs_f64();
+                    metrics_clone.observe_scrape_duration(collector.name(), duration);
+                }
+
+                status_state.set_last_scrape(now_ms);
+                healthy_clone.store(all_ok, Ordering::Relaxed);
+                drop(guard);
+
+                if let Some(tsdb) = tsdb_for_collection.clone() {
+                    let samples = samples_from_registry(&metrics_clone, ts_ms);
+                    if let Err(err) = tsdb.write_samples(&samples).await {
+                        warn!("local TSDB write failed: {:?}", err);
+                    }
+                }
+            }
+        });
+
+        let router = build_router(HttpState {
+            metrics: metrics.clone(),
+            healthy: healthy.clone(),
+            status: status.clone(),
+            tsdb: local_tsdb.clone(),
+        });
+        let http_task = serve(&config.listen_address, router)
+            .await
+            .context("starting HTTP server")?;
+
+        tokio::select! {
+            res = collection_task => {
+                if let Err(err) = res {
+                    return Err(anyhow::anyhow!("collection task panicked: {:?}", err));
+                }
+            },
+            res = http_task => {
+                if let Err(err) = res {
+                    return Err(anyhow::anyhow!("http server task panicked: {:?}", err));
+                }
+            },
+            _ = signal::ctrl_c() => {
+                if let Some(tsdb) = tsdb_for_shutdown {
+                    let _ = tsdb.flush_current().await;
+                }
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+}

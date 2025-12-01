@@ -1,0 +1,306 @@
+// ESNODE | Source Available BUSL-1.1 | Copyright (c) 2024 Estimatedstocks AB
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, RwLock,
+};
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Default, Clone)]
+pub struct StatusState {
+    healthy: Arc<AtomicBool>,
+    node_power_microwatts: Arc<AtomicU64>,
+    cpu_package_power_watts: Arc<RwLock<Vec<PackagePower>>>,
+    cpu_temperatures: Arc<RwLock<Vec<TemperatureReading>>>,
+    gpu_status: Arc<RwLock<Vec<GpuStatus>>>,
+    load_avg_1m: Arc<AtomicU64>,
+    last_errors: Arc<RwLock<Vec<CollectorError>>>,
+    last_scrape_unix_ms: Arc<AtomicU64>,
+    host: Arc<RwLock<HostMetrics>>,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct StatusSnapshot {
+    pub healthy: bool,
+    pub load_avg_1m: f64,
+    #[serde(default)]
+    pub load_avg_5m: Option<f64>,
+    #[serde(default)]
+    pub load_avg_15m: Option<f64>,
+    #[serde(default)]
+    pub uptime_seconds: Option<u64>,
+    pub last_scrape_unix_ms: u64,
+    pub last_errors: Vec<CollectorError>,
+    pub node_power_watts: Option<f64>,
+    pub cpu_package_power_watts: Vec<PackagePower>,
+    pub cpu_temperatures: Vec<TemperatureReading>,
+    pub gpus: Vec<GpuStatus>,
+    #[serde(default)]
+    pub cpu_cores: Option<u64>,
+    #[serde(default)]
+    pub cpu_util_percent: Option<f64>,
+    #[serde(default)]
+    pub mem_total_bytes: Option<u64>,
+    #[serde(default)]
+    pub mem_used_bytes: Option<u64>,
+    #[serde(default)]
+    pub mem_free_bytes: Option<u64>,
+    #[serde(default)]
+    pub swap_used_bytes: Option<u64>,
+    #[serde(default)]
+    pub disk_root_total_bytes: Option<u64>,
+    #[serde(default)]
+    pub disk_root_used_bytes: Option<u64>,
+    #[serde(default)]
+    pub disk_root_io_time_ms: Option<u64>,
+    #[serde(default)]
+    pub primary_nic: Option<String>,
+    #[serde(default)]
+    pub net_rx_bytes_per_sec: Option<f64>,
+    #[serde(default)]
+    pub net_tx_bytes_per_sec: Option<f64>,
+    #[serde(default)]
+    pub net_drops_per_sec: Option<f64>,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct PackagePower {
+    pub package: String,
+    pub watts: f64,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct TemperatureReading {
+    pub sensor: String,
+    pub celsius: f64,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct CollectorError {
+    pub collector: String,
+    pub message: String,
+    pub unix_ms: u64,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct GpuStatus {
+    pub gpu: String,
+    pub temperature_celsius: Option<f64>,
+    pub power_watts: Option<f64>,
+    pub util_percent: Option<f64>,
+    pub memory_total_bytes: Option<f64>,
+    pub memory_used_bytes: Option<f64>,
+    pub fan_percent: Option<f64>,
+    pub clock_sm_mhz: Option<f64>,
+    pub clock_mem_mhz: Option<f64>,
+    pub thermal_throttle: bool,
+    pub power_throttle: bool,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct HostMetrics {
+    pub load_avg_5m: Option<f64>,
+    pub load_avg_15m: Option<f64>,
+    pub uptime_seconds: Option<u64>,
+    pub cpu_cores: Option<u64>,
+    pub cpu_util_percent: Option<f64>,
+    pub mem_total_bytes: Option<u64>,
+    pub mem_used_bytes: Option<u64>,
+    pub mem_free_bytes: Option<u64>,
+    pub swap_used_bytes: Option<u64>,
+    pub disk_root_total_bytes: Option<u64>,
+    pub disk_root_used_bytes: Option<u64>,
+    pub disk_root_io_time_ms: Option<u64>,
+    pub primary_nic: Option<String>,
+    pub net_rx_bytes_per_sec: Option<f64>,
+    pub net_tx_bytes_per_sec: Option<f64>,
+    pub net_drops_per_sec: Option<f64>,
+}
+
+impl StatusState {
+    pub fn new(healthy: Arc<AtomicBool>) -> Self {
+        StatusState {
+            healthy,
+            node_power_microwatts: Arc::new(AtomicU64::new(0)),
+            cpu_package_power_watts: Arc::new(RwLock::new(Vec::new())),
+            cpu_temperatures: Arc::new(RwLock::new(Vec::new())),
+            gpu_status: Arc::new(RwLock::new(Vec::new())),
+            load_avg_1m: Arc::new(AtomicU64::new(0)),
+            last_errors: Arc::new(RwLock::new(Vec::new())),
+            last_scrape_unix_ms: Arc::new(AtomicU64::new(0)),
+            host: Arc::new(RwLock::new(HostMetrics::default())),
+        }
+    }
+
+    pub fn snapshot(&self) -> StatusSnapshot {
+        let host = self.host.read().map(|h| h.clone()).unwrap_or_default();
+        StatusSnapshot {
+            healthy: self.healthy.load(Ordering::Relaxed),
+            load_avg_1m: self.load_avg_1m.load(Ordering::Relaxed) as f64 / 1000.0,
+            load_avg_5m: host.load_avg_5m,
+            load_avg_15m: host.load_avg_15m,
+            uptime_seconds: host.uptime_seconds,
+            last_scrape_unix_ms: self.last_scrape_unix_ms.load(Ordering::Relaxed),
+            last_errors: self
+                .last_errors
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_default(),
+            node_power_watts: {
+                let v = self.node_power_microwatts.load(Ordering::Relaxed);
+                if v == 0 {
+                    None
+                } else {
+                    Some(v as f64 / 1_000_000.0)
+                }
+            },
+            cpu_package_power_watts: self
+                .cpu_package_power_watts
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_default(),
+            cpu_temperatures: self
+                .cpu_temperatures
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_default(),
+            gpus: self
+                .gpu_status
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_default(),
+            cpu_cores: host.cpu_cores,
+            cpu_util_percent: host.cpu_util_percent,
+            mem_total_bytes: host.mem_total_bytes,
+            mem_used_bytes: host.mem_used_bytes,
+            mem_free_bytes: host.mem_free_bytes,
+            swap_used_bytes: host.swap_used_bytes,
+            disk_root_total_bytes: host.disk_root_total_bytes,
+            disk_root_used_bytes: host.disk_root_used_bytes,
+            disk_root_io_time_ms: host.disk_root_io_time_ms,
+            primary_nic: host.primary_nic,
+            net_rx_bytes_per_sec: host.net_rx_bytes_per_sec,
+            net_tx_bytes_per_sec: host.net_tx_bytes_per_sec,
+            net_drops_per_sec: host.net_drops_per_sec,
+        }
+    }
+
+    pub fn set_node_power(&self, watts: f64) {
+        self.node_power_microwatts
+            .store((watts * 1_000_000.0) as u64, Ordering::Relaxed);
+    }
+
+    pub fn set_load_avg(&self, load: f64) {
+        self.load_avg_1m
+            .store((load * 1000.0) as u64, Ordering::Relaxed);
+    }
+
+    pub fn set_last_scrape(&self, unix_ms: u64) {
+        self.last_scrape_unix_ms.store(unix_ms, Ordering::Relaxed);
+    }
+
+    pub fn record_error(&self, collector: &str, message: String, unix_ms: u64) {
+        if let Ok(mut guard) = self.last_errors.write() {
+            guard.push(CollectorError {
+                collector: collector.to_string(),
+                message,
+                unix_ms,
+            });
+            // Keep only recent 10
+            if guard.len() > 10 {
+                guard.remove(0);
+            }
+        }
+    }
+
+    pub fn set_cpu_package_power(&self, package: String, watts: f64) {
+        if let Ok(mut guard) = self.cpu_package_power_watts.write() {
+            let mut updated = false;
+            for p in guard.iter_mut() {
+                if p.package == package {
+                    p.watts = watts;
+                    updated = true;
+                    break;
+                }
+            }
+            if !updated {
+                guard.push(PackagePower { package, watts });
+            }
+        }
+    }
+
+    pub fn set_cpu_temperatures(&self, readings: Vec<TemperatureReading>) {
+        if let Ok(mut guard) = self.cpu_temperatures.write() {
+            *guard = readings;
+        }
+    }
+
+    pub fn set_gpu_statuses(&self, statuses: Vec<GpuStatus>) {
+        if let Ok(mut guard) = self.gpu_status.write() {
+            *guard = statuses;
+        }
+    }
+
+    pub fn set_cpu_summary(
+        &self,
+        cores: Option<u64>,
+        util_percent: Option<f64>,
+        load_1m: f64,
+        load_5m: Option<f64>,
+        load_15m: Option<f64>,
+        uptime_seconds: Option<u64>,
+    ) {
+        self.load_avg_1m
+            .store((load_1m * 1000.0) as u64, Ordering::Relaxed);
+        if let Ok(mut guard) = self.host.write() {
+            guard.cpu_cores = cores;
+            guard.cpu_util_percent = util_percent;
+            guard.load_avg_5m = load_5m;
+            guard.load_avg_15m = load_15m;
+            guard.uptime_seconds = uptime_seconds;
+        }
+    }
+
+    pub fn set_memory_summary(
+        &self,
+        total_bytes: Option<u64>,
+        used_bytes: Option<u64>,
+        free_bytes: Option<u64>,
+        swap_used_bytes: Option<u64>,
+    ) {
+        if let Ok(mut guard) = self.host.write() {
+            guard.mem_total_bytes = total_bytes;
+            guard.mem_used_bytes = used_bytes;
+            guard.mem_free_bytes = free_bytes;
+            guard.swap_used_bytes = swap_used_bytes;
+        }
+    }
+
+    pub fn set_disk_summary(
+        &self,
+        total_bytes: Option<u64>,
+        used_bytes: Option<u64>,
+        io_time_ms: Option<u64>,
+    ) {
+        if let Ok(mut guard) = self.host.write() {
+            guard.disk_root_total_bytes = total_bytes;
+            guard.disk_root_used_bytes = used_bytes;
+            guard.disk_root_io_time_ms = io_time_ms;
+        }
+    }
+
+    pub fn set_network_summary(
+        &self,
+        primary_nic: Option<String>,
+        rx_bytes_per_sec: Option<f64>,
+        tx_bytes_per_sec: Option<f64>,
+        drops_per_sec: Option<f64>,
+    ) {
+        if let Ok(mut guard) = self.host.write() {
+            guard.primary_nic = primary_nic;
+            guard.net_rx_bytes_per_sec = rx_bytes_per_sec;
+            guard.net_tx_bytes_per_sec = tx_bytes_per_sec;
+            guard.net_drops_per_sec = drops_per_sec;
+        }
+    }
+}
