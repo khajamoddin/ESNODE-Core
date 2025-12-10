@@ -47,3 +47,10 @@ Adjust mounts/privileges for GPU telemetry (e.g., NVIDIA Container Toolkit) and 
   - In CI: store as secrets and login the same way.
 
 See `.env.docker.example` for a template of local env vars (copy to `.env.docker` and fill; do not commit secrets).
+
+## Release workflow (automated images)
+- `.github/workflows/release.yml` builds binaries, packages artifacts, and now builds multi-arch images from the published tarballs:
+  - Uses `deploy/docker/Dockerfile.multi` with pre-extracted binaries named `esnode-core-amd64` and `esnode-core-arm64`.
+  - Pushes to `ghcr.io/esnode/esnode-core:<tag>` and `:latest`.
+  - Optionally pushes to Docker Hub `docker.io/esnode/esnode-core` when `DOCKERHUB_USER`/`DOCKERHUB_TOKEN` secrets are set.
+- Ensure GHCR has write permission for the GitHub token, or set a PAT with `write:packages` if needed.
