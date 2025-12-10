@@ -45,6 +45,9 @@ call_build() {
       if command -v x86_64-unknown-linux-gnu-ar >/dev/null 2>&1; then
         env+=("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_AR=$(command -v x86_64-unknown-linux-gnu-ar)")
       fi
+    else
+      echo "!! Skipping ${label}: missing x86_64-unknown-linux-gnu cross toolchain (install via Homebrew)" >&2
+      return
     fi
   elif [[ "${target}" == "aarch64-unknown-linux-gnu" ]]; then
     if command -v aarch64-unknown-linux-gnu-gcc >/dev/null 2>&1; then

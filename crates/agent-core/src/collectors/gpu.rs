@@ -26,7 +26,7 @@ use anyhow::Result;
 
 use crate::collectors::Collector;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
-use crate::event_worker::{spawn_event_worker, EventRecord};
+use crate::event_worker::spawn_event_worker;
 use crate::metrics::MetricsRegistry;
 use crate::state::{
     FabricLink, FabricLinkType, GpuCapabilities, GpuHealth, GpuIdentity, GpuStatus, GpuTopo,
@@ -34,8 +34,7 @@ use crate::state::{
 };
 #[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
 use crate::state::{ComputeInstanceNode, GpuInstanceNode, MigTree};
-#[cfg(feature = "gpu")]
-#[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
+#[cfg(all(feature = "gpu", target_os = "linux"))]
 use nvml_wrapper::error::NvmlError;
 use crate::config::AgentConfig;
 #[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
