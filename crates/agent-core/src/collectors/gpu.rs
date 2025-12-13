@@ -33,7 +33,7 @@ use crate::metrics::MetricsRegistry;
 use crate::state::{ComputeInstanceNode, GpuInstanceNode, MigTree};
 use crate::state::{
     FabricLink, FabricLinkType, GpuCapabilities, GpuHealth, GpuIdentity, GpuStatus, GpuTopo,
-    GpuVendor, StatusState,
+    GpuVendor, MigDeviceStatus, StatusState,
 };
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 use nvml_wrapper::error::NvmlError;
@@ -910,8 +910,8 @@ impl Collector for GpuCollector {
                                     .set(1.0);
                             }
                             for mig in &migs.devices {
-                                let mig_label =
-                                    mig.uuid.as_deref().unwrap_or(mig.id.to_string().as_str());
+                                let mig_id_string = mig.id.to_string();
+                                let mig_label = mig.uuid.as_deref().unwrap_or(mig_id_string.as_str());
                                 let compat_label = if self.k8s_mode {
                                     k8s_resource_name(
                                         self.resource_prefix,
@@ -1096,6 +1096,17 @@ impl Collector for GpuCollector {
                                 .with_label_values(&[uuid_label, gpu_label.as_str()])
                                 .set(if migs.supported { 1.0 } else { 0.0 });
                         }
+                    } else {
+                        metrics
+                            .gpu_mig_supported
+                            .with_label_values(&[uuid_label, gpu_label.as_str()])
+                            .set(0.0);
+                        metrics
+                            .gpu_mig_enabled
+                            .with_label_values(&[uuid_label, gpu_label.as_str()])
+                            .set(0.0);
+                    }
+                        }
                     }
                     #[cfg(not(all(feature = "gpu-nvml-ffi", feature = "gpu")))]
                     {
@@ -1245,7 +1256,7 @@ fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mig
             continue;
         }
         // Obtain full device handle for MIG to use safe wrapper methods where possible.
-        let mut full_handle = std::ptr::null_mut();
+        let mut full_handle: *mut nvml_wrapper_sys::bindings::nvmlDevice_st = std::ptr::null_mut();
         let _ =
             unsafe { nvmlDeviceGetDeviceHandleFromMigDeviceHandle(mig_handle, &mut full_handle) };
         let handle_to_use = if !full_handle.is_null() {
@@ -1257,7 +1268,7 @@ fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mig
         let mig_uuid = mig_device.uuid().ok();
         let mem_info = mig_device.memory_info().ok();
         let util = mig_device.utilization_rates().ok();
-        let sm_count = mig_device.multi_processor_count().ok();
+        let sm_count = None; // mig_device.multi_processor_count().ok();
         let mut gi_id: c_uint = 0;
         let mut ci_id: c_uint = 0;
         let _ = unsafe { nvmlDeviceGetGpuInstanceId(mig_handle, &mut gi_id) };
@@ -1296,7 +1307,7 @@ fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mig
                             gpu_instance_id: gi_id,
                             id: ci_id,
                             profile_id: Some(ci_info.profileId),
-                            eng_profile_id: Some(ci_info.engineProfile),
+                            eng_profile_id: None, // Some(ci_info.engineProfile),
                             placement: Some(format!(
                                 "{}:slice{}",
                                 ci_info.placement.start, ci_info.placement.size

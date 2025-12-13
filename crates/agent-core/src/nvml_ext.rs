@@ -4,6 +4,24 @@
 #[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
 use nvml_wrapper_sys::bindings::*;
 
+#[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
+extern "C" {
+    fn nvmlDeviceGetPcieStats(
+        device: nvmlDevice_t,
+        counter: u32,
+        value: *mut u32,
+    ) -> nvmlReturn_t;
+    fn nvmlDeviceGetPcieReplayCounter(
+        device: nvmlDevice_t,
+        value: *mut u32,
+    ) -> nvmlReturn_t;
+    fn nvmlDeviceGetFieldValues(
+        device: nvmlDevice_t,
+        valuesCount: u32,
+        values: *mut nvmlFieldValue_t,
+    ) -> nvmlReturn_t;
+}
+
 /// Errors from extended NVML calls.
 #[derive(thiserror::Error, Debug)]
 pub enum NvmlExtError {
@@ -65,11 +83,11 @@ pub fn pcie_ext_counters(device: nvmlDevice_t) -> Result<PcieExt, NvmlExtError> 
     // nvmlDeviceGetPcieReplayCounter is already available in wrapper; here we try best-effort extras.
     // As nvml-wrapper does not expose these, we attempt direct bindings when available; otherwise return NotSupported.
     unsafe {
-        let mut corr: nvmlPciErrorCounter_t = 0;
-        let mut atomic: nvmlPcieUtilCounter_t = 0;
+        let mut corr: u32 = 0;
+        let mut atomic: u32 = 0;
         let corr_ret = nvmlDeviceGetPcieStats(
             device,
-            nvmlPcieUtilCounter_NVML_PCIE_UTIL_TX_BYTES,
+            nvmlPcieUtilCounter_enum_NVML_PCIE_UTIL_TX_BYTES,
             &mut corr,
         );
         let atomic_ret = nvmlDeviceGetPcieReplayCounter(device, &mut atomic);
@@ -108,7 +126,7 @@ pub fn get_field_values(
         }
         let mut out = FieldValues::default();
         for f in fields {
-            out.values.push((f.fieldId, f.value.lVal));
+            out.values.push((f.fieldId, f.value.si64Val));
         }
         Ok(out)
     }
