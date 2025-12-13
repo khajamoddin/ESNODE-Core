@@ -39,8 +39,7 @@ use crate::state::{
 use nvml_wrapper::error::NvmlError;
 #[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
 use nvml_wrapper_sys::bindings::{
-    nvmlDeviceGetDeviceHandleFromMigDeviceHandle, nvmlDeviceGetMaxMigDeviceCount,
-    nvmlDeviceGetMigDeviceHandleByIndex, nvmlDeviceGetMigMode, nvmlDevice_t, nvmlReturn_t,
+    nvmlDevice_t, nvmlReturn_t,
 };
 
 #[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
@@ -70,6 +69,24 @@ extern "C" {
         gpuInstance: nvmlDevice_t,
         id: std::os::raw::c_uint,
         computeInstance: *mut nvmlDevice_t,
+    ) -> nvmlReturn_t;
+    fn nvmlDeviceGetMigMode(
+        device: nvmlDevice_t,
+        currentMode: *mut std::os::raw::c_uint,
+        pendingMode: *mut std::os::raw::c_uint,
+    ) -> nvmlReturn_t;
+    fn nvmlDeviceGetMaxMigDeviceCount(
+        device: nvmlDevice_t,
+        count: *mut std::os::raw::c_uint,
+    ) -> nvmlReturn_t;
+    fn nvmlDeviceGetMigDeviceHandleByIndex(
+        device: nvmlDevice_t,
+        index: std::os::raw::c_uint,
+        migDevice: *mut nvmlDevice_t,
+    ) -> nvmlReturn_t;
+    fn nvmlDeviceGetDeviceHandleFromMigDeviceHandle(
+        migDevice: nvmlDevice_t,
+        device: *mut nvmlDevice_t,
     ) -> nvmlReturn_t;
 }
 
@@ -279,7 +296,7 @@ impl Collector for GpuCollector {
             let event_set: Option<()> = None;
             #[cfg(not(target_os = "linux"))]
             let _ = &event_set;
-            let events_enabled = self.enable_events;
+            let _events_enabled = self.enable_events;
             #[cfg(not(target_os = "linux"))]
             if events_enabled {
                 tracing::debug!(
@@ -1091,11 +1108,12 @@ impl Collector for GpuCollector {
                                     ])
                                     .set(1.0);
                             }
+                            let supported = migs.supported;
                             status.mig_tree = Some(migs);
                             metrics
                                 .gpu_mig_supported
                                 .with_label_values(&[uuid_label, gpu_label.as_str()])
-                                .set(if migs.supported { 1.0 } else { 0.0 });
+                                .set(if supported { 1.0 } else { 0.0 });
                         }
                     }
 

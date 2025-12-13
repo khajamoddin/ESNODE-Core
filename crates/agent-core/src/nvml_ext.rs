@@ -119,7 +119,7 @@ pub fn get_field_values(
         }
         let mut out = FieldValues::default();
         for f in fields {
-            out.values.push((f.fieldId, f.value.si64Val));
+            out.values.push((f.fieldId, f.value.sllVal));
         }
         Ok(out)
     }
