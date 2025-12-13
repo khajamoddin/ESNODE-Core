@@ -62,17 +62,10 @@ pub mod field {
     pub const FI_DEV_PCIE_INBOUND_ATOMICS_MASK: u32 = 229;
 }
 
-#[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
-unsafe fn to_err(ret: nvmlReturn_t) -> Result<(), NvmlExtError> {
-    if ret == nvmlReturn_enum_NVML_SUCCESS {
-        Ok(())
-    } else {
-        Err(NvmlExtError::NvmlReturn(ret as i32))
-    }
-}
+
 
 #[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
-pub fn pcie_ext_counters(device: nvmlDevice_t) -> Result<PcieExt, NvmlExtError> {
+pub unsafe fn pcie_ext_counters(device: nvmlDevice_t) -> Result<PcieExt, NvmlExtError> {
     // nvmlDeviceGetPcieReplayCounter is already available in wrapper; here we try best-effort extras.
     // As nvml-wrapper does not expose these, we attempt direct bindings when available; otherwise return NotSupported.
     unsafe {
@@ -104,7 +97,7 @@ pub fn nvswitch_ext_counters(_device: nvmlDevice_t) -> Result<NvSwitchExt, NvmlE
 }
 
 #[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
-pub fn get_field_values(
+pub unsafe fn get_field_values(
     device: nvmlDevice_t,
     field_ids: &[u32],
 ) -> Result<FieldValues, NvmlExtError> {

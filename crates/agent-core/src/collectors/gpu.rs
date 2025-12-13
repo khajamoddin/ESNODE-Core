@@ -648,14 +648,16 @@ impl Collector for GpuCollector {
                     .inc_by(0);
                 #[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
                 {
-                    if let Ok(field_vals) = crate::nvml_ext::get_field_values(
-                        unsafe { device.handle() },
-                        &[
-                            crate::nvml_ext::field::FI_DEV_PCIE_COUNT_CORRECTABLE_ERRORS,
-                            crate::nvml_ext::field::FI_DEV_PCIE_COUNT_NON_FATAL_ERROR,
-                            crate::nvml_ext::field::FI_DEV_PCIE_COUNT_FATAL_ERROR,
-                        ],
-                    ) {
+                    if let Ok(field_vals) = unsafe {
+                        crate::nvml_ext::get_field_values(
+                            device.handle(),
+                            &[
+                                crate::nvml_ext::field::FI_DEV_PCIE_COUNT_CORRECTABLE_ERRORS,
+                                crate::nvml_ext::field::FI_DEV_PCIE_COUNT_NON_FATAL_ERROR,
+                                crate::nvml_ext::field::FI_DEV_PCIE_COUNT_FATAL_ERROR,
+                            ],
+                        )
+                    } {
                         if let Some(corr) = field_vals
                             .get(crate::nvml_ext::field::FI_DEV_PCIE_COUNT_CORRECTABLE_ERRORS)
                         {
@@ -676,7 +678,8 @@ impl Collector for GpuCollector {
                             .with_label_values(&[uuid_label, gpu_label.as_str()])
                             .inc_by(uncorrectable);
                     }
-                    if let Ok(ext) = crate::nvml_ext::pcie_ext_counters(unsafe { device.handle() })
+                    if let Ok(ext) =
+                        unsafe { crate::nvml_ext::pcie_ext_counters(device.handle()) }
                     {
                         if let Some(c) = ext.correctable_errors {
                             metrics
@@ -1346,7 +1349,7 @@ fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mig
             uuid: mig_uuid,
             memory_total_bytes: mem_info.as_ref().map(|m| m.total),
             memory_used_bytes: mem_info.map(|m| m.used),
-            util_percent: util.map(|u| u.gpu as u32),
+            util_percent: util.map(|u| u.gpu),
             sm_count,
             profile: profile_str,
             placement: Some(placement_str),
