@@ -148,8 +148,8 @@ All ESNODE-Core metrics are exposed at `/metrics` in Prometheus format and use t
 
 | Metric name                             | Type  | Labels  | Description                              |
 |-----------------------------------------|-------|---------|------------------------------------------|
-| `esnode_ai_tokens_per_joule`            | Gauge | `agent` | Instant tokens per joule efficiency.     |
-| `esnode_ai_tokens_per_watt`             | Gauge | `agent` | Instant tokens per watt.                 |
+| `esnode_ai_tokens_per_joule`            | Gauge | `agent` | Instant tokens per joule efficiency (agent label = managed node ID or `local`). |
+| `esnode_ai_tokens_per_watt`             | Gauge | `agent` | Instant tokens per watt (agent label = managed node ID or `local`).             |
 | `esnode_ai_cost_per_million_tokens_usd` | Gauge | `agent` | Cost per million tokens (power-based).   |
 | `esnode_ai_carbon_grams_per_token`      | Gauge | `agent` | Estimated carbon per token.              |
 

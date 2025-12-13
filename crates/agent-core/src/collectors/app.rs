@@ -15,16 +15,18 @@ pub struct AppCollector {
     last_tokens: Option<f64>,
     last_ts: Option<Instant>,
     warned: bool,
+    agent_label: String,
 }
 
 impl AppCollector {
-    pub fn new(status: StatusState, url: String) -> Self {
+    pub fn new(status: StatusState, url: String, agent_label: String) -> Self {
         AppCollector {
             url,
             status,
             last_tokens: None,
             last_ts: None,
             warned: false,
+            agent_label,
         }
     }
 
@@ -102,7 +104,7 @@ impl Collector for AppCollector {
                     if let Some(tps) = self.status.snapshot().app_tokens_per_watt {
                         metrics
                             .ai_tokens_per_watt
-                            .with_label_values(&["agent"])
+                            .with_label_values(&[self.agent_label.as_str()])
                             .set(tps);
                     }
                 }

@@ -141,6 +141,10 @@ impl Agent {
                 .with_label_values(&["power"])
                 .set(1.0);
         }
+        let agent_label = config
+            .managed_node_id
+            .clone()
+            .unwrap_or_else(|| "local".to_string());
         if config.enable_app {
             info!("App collector enabled (url={})", config.app_metrics_url);
             metrics
@@ -150,6 +154,7 @@ impl Agent {
             collectors.push(Box::new(AppCollector::new(
                 status.clone(),
                 config.app_metrics_url.clone(),
+                agent_label.clone(),
             )));
         } else {
             metrics
@@ -188,22 +193,21 @@ impl Agent {
             .agent_build_info
             .with_label_values(&[version, commit])
             .set(1.0);
-        let agent_label = config.managed_node_id.as_deref().unwrap_or("local");
         metrics
             .ai_tokens_per_joule
-            .with_label_values(&[agent_label])
+            .with_label_values(&[agent_label.as_str()])
             .set(0.0);
         metrics
             .ai_tokens_per_watt
-            .with_label_values(&[agent_label])
+            .with_label_values(&[agent_label.as_str()])
             .set(0.0);
         metrics
             .ai_cost_per_million_tokens_usd
-            .with_label_values(&[agent_label])
+            .with_label_values(&[agent_label.as_str()])
             .set(0.0);
         metrics
             .ai_carbon_grams_per_token
-            .with_label_values(&[agent_label])
+            .with_label_values(&[agent_label.as_str()])
             .set(0.0);
 
         Ok(Agent {
