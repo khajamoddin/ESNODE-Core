@@ -5,7 +5,6 @@
 use nvml_wrapper_sys::bindings::*;
 
 #[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
-
 /// Errors from extended NVML calls.
 #[derive(thiserror::Error, Debug)]
 pub enum NvmlExtError {
@@ -125,7 +124,7 @@ pub unsafe fn get_field_values(
 
         type NvmlDeviceGetFieldValues = unsafe extern "C" fn(
             device: nvmlDevice_t,
-            valuesCount: u32,
+            values_count: u32,
             values: *mut nvmlFieldValue_t,
         ) -> nvmlReturn_t;
 
