@@ -24,6 +24,8 @@ pub struct HttpState {
     pub status: StatusState,
     pub tsdb: Option<std::sync::Arc<crate::tsdb::LocalTsdb>>,
     pub orchestrator: Option<esnode_orchestrator::AppState>,
+    pub orchestrator_allow_public: bool,
+    pub listen_is_loopback: bool,
 }
 
 pub fn build_router(state: HttpState) -> Router {
@@ -36,10 +38,17 @@ pub fn build_router(state: HttpState) -> Router {
         .route("/tsdb/export", get(tsdb_export_handler));
 
     if let Some(orch_state) = &state.orchestrator {
-        router = router.nest_service(
-            "/orchestrator",
-            esnode_orchestrator::routes(orch_state.clone()),
-        );
+        if state.orchestrator_allow_public || state.listen_is_loopback {
+            router = router.nest_service(
+                "/orchestrator",
+                esnode_orchestrator::routes(orch_state.clone()),
+            );
+        } else {
+            tracing::warn!(
+                "Orchestrator routes are disabled on non-loopback listener; \
+                 set orchestrator.allow_public=true to expose /orchestrator/*"
+            );
+        }
     }
 
     router.with_state(state)

@@ -80,6 +80,7 @@ Configuration precedence: CLI flags > env vars > `esnode.toml` > defaults. See `
   - `mig_config_devices` / `NVIDIA_MIG_CONFIG_DEVICES` – filter MIG-capable GPUs when `enable_gpu_mig` is true.
   - Optional `gpu-nvml-ffi-ext` feature enables additional NVML field-based counters (PCIe/etc.), best-effort only.
   - `enable_app` + `app_metrics_url` – app/model metrics collector uses a 2s HTTP timeout; slow or hung endpoints are skipped for that scrape without blocking other collectors.
+  - Orchestrator control API (`/orchestrator/*`) is exposed only on loopback listeners by default; set `orchestrator.allow_public=true` explicitly if you need to serve it on non-loopback addresses.
 
 Local TSDB path (default): when `enable_local_tsdb` is true, the agent now resolves `local_tsdb_path` to `$XDG_DATA_HOME/esnode/tsdb` or `~/.local/share/esnode/tsdb` so non-root runs don’t fail on `/var/lib`. Set `ESNODE_LOCAL_TSDB_PATH` or the config key if you want `/var/lib/esnode/tsdb` and ensure the directory is writable by the agent user.
 

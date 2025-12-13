@@ -126,6 +126,7 @@ log_level = "info"
 
 [orchestrator]
 enabled = false                # Master toggle for orchestration
+# allow_public = false         # Control API (/orchestrator/*) only binds on loopback unless explicitly set true
 enable_zombie_reaper = true    # Kill zombie processes
 enable_turbo_mode = false      # Latency optimization
 enable_bin_packing = false     # Task scheduling

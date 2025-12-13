@@ -22,6 +22,7 @@ use collectors::{
 pub use config::{AgentConfig, ConfigOverrides, LogLevel};
 use http::{build_router, serve, HttpState};
 use metrics::MetricsRegistry;
+use std::net::SocketAddr;
 use tokio::signal;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -310,6 +311,12 @@ impl Agent {
             status: status.clone(),
             tsdb: local_tsdb.clone(),
             orchestrator: orchestrator_state,
+            orchestrator_allow_public: config
+                .orchestrator
+                .as_ref()
+                .map(|o| o.allow_public)
+                .unwrap_or(false),
+            listen_is_loopback: listen_is_loopback(&config.listen_address),
         };
         let router = build_router(http_state);
         let http_task = serve(&config.listen_address, router)
@@ -337,4 +344,11 @@ impl Agent {
         }
         Ok(())
     }
+}
+
+fn listen_is_loopback(listen: &str) -> bool {
+    listen
+        .parse::<SocketAddr>()
+        .map(|addr| addr.ip().is_loopback())
+        .unwrap_or(false)
 }

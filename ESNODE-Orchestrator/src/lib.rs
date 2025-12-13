@@ -67,6 +67,10 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrchestratorConfig {
     pub enabled: bool,
+    /// Allow exposing orchestrator control API on non-loopback listeners.
+    /// Default is false; agents bind to loopback-only for orchestrator routes unless explicitly allowed.
+    #[serde(default)]
+    pub allow_public: bool,
     // Compute Loop
     pub enable_zombie_reaper: bool,
     pub enable_turbo_mode: bool,
@@ -82,6 +86,7 @@ impl Default for OrchestratorConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            allow_public: false,
             enable_zombie_reaper: true,
             enable_turbo_mode: false,
             enable_bin_packing: false,
