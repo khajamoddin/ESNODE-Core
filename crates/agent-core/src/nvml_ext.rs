@@ -116,7 +116,7 @@ pub unsafe fn get_field_values(
     device: nvmlDevice_t,
     field_ids: &[u32],
 ) -> Result<FieldValues, NvmlExtError> {
-) -> Result<FieldValues, NvmlExtError> {
+
     unsafe {
         let lib = libloading::Library::new("libnvidia-ml.so.1").map_err(|_| NvmlExtError::NotSupported)?;
         
