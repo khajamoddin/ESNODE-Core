@@ -695,7 +695,8 @@ impl Collector for GpuCollector {
                                 device.pcie_link_gen(),
                                 device.pcie_link_width(),
                                 device.pcie_link_speed(),
-                            ) {   let bytes_per_s = ((tx_kb + rx_kb) as f64) * 1024.0;
+                            ) {
+                                let bytes_per_s = ((tx_kb + rx_kb) as f64) * 1024.0;
                                 let lane_budget_bytes =
                                     pcie_lane_bytes_per_sec(gen, speed) * (width as f64).max(1.0);
                                 if lane_budget_bytes > 0.0 {
@@ -842,7 +843,7 @@ impl Collector for GpuCollector {
                     {
                         use nvml_wrapper_sys::bindings::{
                             nvmlComputeInstanceInfo_t, nvmlDevice_t, nvmlGpuInstanceInfo_t,
-                            nvmlReturn_t, nvmlReturn_enum_NVML_SUCCESS,
+                            nvmlReturn_enum_NVML_SUCCESS, nvmlReturn_t,
                         };
                         // Load NVML dynamically to bypass missing symbols in sys crate
                         let lib = unsafe { libloading::Library::new("libnvidia-ml.so.1") }?;
@@ -852,74 +853,90 @@ impl Collector for GpuCollector {
                             device: nvmlDevice_t,
                             current_mode: *mut std::os::raw::c_uint,
                             pending_mode: *mut std::os::raw::c_uint,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetMaxMigDeviceCount = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             count: *mut std::os::raw::c_uint,
-                        ) -> nvmlReturn_t;
-                        type NvmlDeviceGetMigDeviceHandleByIndex = unsafe extern "C" fn(
-                            device: nvmlDevice_t,
-                            index: std::os::raw::c_uint,
-                            mig_device: *mut nvmlDevice_t,
-                        ) -> nvmlReturn_t;
-                        type NvmlDeviceGetDeviceHandleFromMigDeviceHandle = unsafe extern "C" fn(
-                            mig_device: nvmlDevice_t,
-                            device: *mut nvmlDevice_t,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
+                        type NvmlDeviceGetMigDeviceHandleByIndex =
+                            unsafe extern "C" fn(
+                                device: nvmlDevice_t,
+                                index: std::os::raw::c_uint,
+                                mig_device: *mut nvmlDevice_t,
+                            ) -> nvmlReturn_t;
+                        type NvmlDeviceGetDeviceHandleFromMigDeviceHandle =
+                            unsafe extern "C" fn(
+                                mig_device: nvmlDevice_t,
+                                device: *mut nvmlDevice_t,
+                            ) -> nvmlReturn_t;
                         type NvmlDeviceGetGpuInstanceId = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             id: *mut std::os::raw::c_uint,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetComputeInstanceId = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             id: *mut std::os::raw::c_uint,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetGpuInstanceById = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             id: std::os::raw::c_uint,
                             gpu_instance: *mut nvmlDevice_t,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlGpuInstanceGetInfo = unsafe extern "C" fn(
                             gpu_instance: nvmlDevice_t,
                             info: *mut nvml_wrapper_sys::bindings::nvmlGpuInstanceInfo_t,
-                        ) -> nvmlReturn_t;
-                        type NvmlGpuInstanceGetComputeInstanceById = unsafe extern "C" fn(
-                            gpu_instance: nvmlDevice_t,
-                            id: std::os::raw::c_uint,
-                            compute_instance: *mut nvmlDevice_t,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
+                        type NvmlGpuInstanceGetComputeInstanceById =
+                            unsafe extern "C" fn(
+                                gpu_instance: nvmlDevice_t,
+                                id: std::os::raw::c_uint,
+                                compute_instance: *mut nvmlDevice_t,
+                            ) -> nvmlReturn_t;
                         type NvmlComputeInstanceGetInfo = unsafe extern "C" fn(
                             compute_instance: nvmlDevice_t,
                             info: *mut nvml_wrapper_sys::bindings::nvmlComputeInstanceInfo_t,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetUUID = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             uuid: *mut std::os::raw::c_char,
                             size: std::os::raw::c_uint,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetMemoryInfo = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             memory: *mut nvml_wrapper_sys::bindings::nvmlMemory_t,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetUtilizationRates = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             utilization: *mut nvml_wrapper_sys::bindings::nvmlUtilization_t,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetBar1MemoryInfo = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             bar1_memory: *mut nvml_wrapper_sys::bindings::nvmlBAR1Memory_t,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetEccMode = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             current_mode: *mut nvml_wrapper_sys::bindings::nvmlEnableState_t,
                             pending_mode: *mut nvml_wrapper_sys::bindings::nvmlEnableState_t,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
                         type NvmlDeviceGetTotalEccErrors = unsafe extern "C" fn(
                             device: nvmlDevice_t,
                             error_type: nvml_wrapper_sys::bindings::nvmlMemoryErrorType_t,
                             counter_type: nvml_wrapper_sys::bindings::nvmlEccCounterType_t,
                             ecc_count: *mut u64,
-                        ) -> nvmlReturn_t;
+                        )
+                            -> nvmlReturn_t;
 
                         let get_mig_mode: libloading::Symbol<NvmlDeviceGetMigMode> =
                             unsafe { lib.get(b"nvmlDeviceGetMigMode") }?;
@@ -937,8 +954,9 @@ impl Collector for GpuCollector {
                         let get_compute_instance_id: libloading::Symbol<
                             NvmlDeviceGetComputeInstanceId,
                         > = unsafe { lib.get(b"nvmlDeviceGetComputeInstanceId") }?;
-                        let get_gpu_instance_by_id: libloading::Symbol<NvmlDeviceGetGpuInstanceById> =
-                            unsafe { lib.get(b"nvmlGpuInstanceGetById") }?; // Corrected function name
+                        let get_gpu_instance_by_id: libloading::Symbol<
+                            NvmlDeviceGetGpuInstanceById,
+                        > = unsafe { lib.get(b"nvmlGpuInstanceGetById") }?; // Corrected function name
                         let get_gpu_instance_info: libloading::Symbol<NvmlGpuInstanceGetInfo> =
                             unsafe { lib.get(b"nvmlGpuInstanceGetInfo") }?;
                         let get_gpu_instance_compute_instance_by_id: libloading::Symbol<
@@ -951,8 +969,9 @@ impl Collector for GpuCollector {
                             unsafe { lib.get(b"nvmlDeviceGetUUID") }?;
                         let get_memory_info: libloading::Symbol<NvmlDeviceGetMemoryInfo> =
                             unsafe { lib.get(b"nvmlDeviceGetMemoryInfo") }?;
-                        let get_utilization_rates: libloading::Symbol<NvmlDeviceGetUtilizationRates> =
-                            unsafe { lib.get(b"nvmlDeviceGetUtilizationRates") }?;
+                        let get_utilization_rates: libloading::Symbol<
+                            NvmlDeviceGetUtilizationRates,
+                        > = unsafe { lib.get(b"nvmlDeviceGetUtilizationRates") }?;
                         let get_bar1_memory_info: libloading::Symbol<NvmlDeviceGetBar1MemoryInfo> =
                             unsafe { lib.get(b"nvmlDeviceGetBar1MemoryInfo") }?;
                         let get_total_ecc_errors: libloading::Symbol<NvmlDeviceGetTotalEccErrors> =
@@ -961,9 +980,8 @@ impl Collector for GpuCollector {
                         let mut current_mode = 0;
                         let mut pending = 0;
                         let parent_handle = unsafe { device.handle() };
-                        let mig_mode_res = unsafe {
-                            get_mig_mode(parent_handle, &mut current_mode, &mut pending)
-                        };
+                        let mig_mode_res =
+                            unsafe { get_mig_mode(parent_handle, &mut current_mode, &mut pending) };
                         let supported = mig_mode_res == nvmlReturn_enum_NVML_SUCCESS;
                         let enabled = current_mode
                             == nvml_wrapper_sys::bindings::nvmlMigMode_enum_NVML_DEVICE_MIG_ENABLE;
@@ -1003,7 +1021,11 @@ impl Collector for GpuCollector {
 
                                 let mut uuid_buf = [0i8; 96]; // NVML_DEVICE_UUID_V2_BUFFER_SIZE
                                 let _ = unsafe {
-                                    get_uuid(mig_handle, uuid_buf.as_mut_ptr(), uuid_buf.len() as u32)
+                                    get_uuid(
+                                        mig_handle,
+                                        uuid_buf.as_mut_ptr(),
+                                        uuid_buf.len() as u32,
+                                    )
                                 };
                                 let mig_uuid_str = unsafe {
                                     std::ffi::CStr::from_ptr(uuid_buf.as_ptr())
@@ -1033,8 +1055,9 @@ impl Collector for GpuCollector {
                                             unsafe { std::mem::zeroed() };
                                         gi_info.version =
                                             nvml_wrapper_sys::bindings::nvmlGpuInstanceInfo_v2;
-                                        let _ =
-                                            unsafe { get_gpu_instance_info(gi_handle, &mut gi_info) };
+                                        let _ = unsafe {
+                                            get_gpu_instance_info(gi_handle, &mut gi_info)
+                                        };
                                         let placement = Some(format!(
                                             "{}:slice{}",
                                             gi_info.placement.start, gi_info.placement.size
@@ -1069,7 +1092,10 @@ impl Collector for GpuCollector {
                                                 ci_info.version =
                                                     nvml_wrapper_sys::bindings::nvmlComputeInstanceInfo_v2;
                                                 let _ = unsafe {
-                                                    get_compute_instance_info(ci_handle, &mut ci_info)
+                                                    get_compute_instance_info(
+                                                        ci_handle,
+                                                        &mut ci_info,
+                                                    )
                                                 };
                                                 ci_nodes.push(ComputeInstanceNode {
                                                     gpu_instance_id: gi_id,
@@ -1078,7 +1104,8 @@ impl Collector for GpuCollector {
                                                     eng_profile_id: None, // nvmlComputeInstanceInfo_t_v2 does not have engineProfileId
                                                     placement: Some(format!(
                                                         "{}:slice{}",
-                                                        ci_info.placement.start, ci_info.placement.size
+                                                        ci_info.placement.start,
+                                                        ci_info.placement.size
                                                     )),
                                                 });
                                             }
@@ -1127,18 +1154,16 @@ impl Collector for GpuCollector {
                                     unsafe { std::mem::zeroed() };
                                 let bar1_res =
                                     unsafe { get_bar1_memory_info(mig_handle, &mut bar1_info) };
-                                let bar1_total_bytes =
-                                    if bar1_res == nvmlReturn_enum_NVML_SUCCESS {
-                                        Some(bar1_info.total)
-                                    } else {
-                                        None
-                                    };
-                                let bar1_used_bytes =
-                                    if bar1_res == nvmlReturn_enum_NVML_SUCCESS {
-                                        Some(bar1_info.used)
-                                    } else {
-                                        None
-                                    };
+                                let bar1_total_bytes = if bar1_res == nvmlReturn_enum_NVML_SUCCESS {
+                                    Some(bar1_info.total)
+                                } else {
+                                    None
+                                };
+                                let bar1_used_bytes = if bar1_res == nvmlReturn_enum_NVML_SUCCESS {
+                                    Some(bar1_info.used)
+                                } else {
+                                    None
+                                };
 
                                 let mut ecc_corrected_val: u64 = 0;
                                 let ecc_corrected_res = unsafe {
@@ -1251,11 +1276,7 @@ impl Collector for GpuCollector {
                             if let Some(util) = mig.util_percent {
                                 metrics
                                     .mig_utilization_percent
-                                    .with_label_values(&[
-                                        uuid_label,
-                                        gpu_label.as_str(),
-                                        mig_label,
-                                    ])
+                                    .with_label_values(&[uuid_label, gpu_label.as_str(), mig_label])
                                     .set(util as f64);
                                 if self.k8s_mode {
                                     metrics
@@ -1271,11 +1292,7 @@ impl Collector for GpuCollector {
                             if let Some(total) = mig.memory_total_bytes {
                                 metrics
                                     .mig_memory_total_bytes
-                                    .with_label_values(&[
-                                        uuid_label,
-                                        gpu_label.as_str(),
-                                        mig_label,
-                                    ])
+                                    .with_label_values(&[uuid_label, gpu_label.as_str(), mig_label])
                                     .set(total as f64);
                                 if self.k8s_mode {
                                     metrics
@@ -1291,11 +1308,7 @@ impl Collector for GpuCollector {
                             if let Some(used) = mig.memory_used_bytes {
                                 metrics
                                     .mig_memory_used_bytes
-                                    .with_label_values(&[
-                                        uuid_label,
-                                        gpu_label.as_str(),
-                                        mig_label,
-                                    ])
+                                    .with_label_values(&[uuid_label, gpu_label.as_str(), mig_label])
                                     .set(used as f64);
                                 if self.k8s_mode {
                                     metrics
@@ -1311,11 +1324,7 @@ impl Collector for GpuCollector {
                             if let Some(sm) = mig.sm_count {
                                 metrics
                                     .mig_sm_count
-                                    .with_label_values(&[
-                                        uuid_label,
-                                        gpu_label.as_str(),
-                                        mig_label,
-                                    ])
+                                    .with_label_values(&[uuid_label, gpu_label.as_str(), mig_label])
                                     .set(sm as f64);
                                 if self.k8s_mode {
                                     metrics
@@ -1332,11 +1341,7 @@ impl Collector for GpuCollector {
                             if let Some(corrected) = mig.ecc_corrected {
                                 metrics
                                     .mig_ecc_corrected_total
-                                    .with_label_values(&[
-                                        uuid_label,
-                                        gpu_label.as_str(),
-                                        mig_label,
-                                    ])
+                                    .with_label_values(&[uuid_label, gpu_label.as_str(), mig_label])
                                     .inc_by(corrected);
                                 if self.k8s_mode {
                                     metrics
@@ -1352,11 +1357,7 @@ impl Collector for GpuCollector {
                             if let Some(uncorrected) = mig.ecc_uncorrected {
                                 metrics
                                     .mig_ecc_uncorrected_total
-                                    .with_label_values(&[
-                                        uuid_label,
-                                        gpu_label.as_str(),
-                                        mig_label,
-                                    ])
+                                    .with_label_values(&[uuid_label, gpu_label.as_str(), mig_label])
                                     .inc_by(uncorrected);
                                 if self.k8s_mode {
                                     metrics
@@ -1374,19 +1375,11 @@ impl Collector for GpuCollector {
                             {
                                 metrics
                                     .mig_bar1_total_bytes
-                                    .with_label_values(&[
-                                        uuid_label,
-                                        gpu_label.as_str(),
-                                        mig_label,
-                                    ])
+                                    .with_label_values(&[uuid_label, gpu_label.as_str(), mig_label])
                                     .set(total as f64);
                                 metrics
                                     .mig_bar1_used_bytes
-                                    .with_label_values(&[
-                                        uuid_label,
-                                        gpu_label.as_str(),
-                                        mig_label,
-                                    ])
+                                    .with_label_values(&[uuid_label, gpu_label.as_str(), mig_label])
                                     .set(used as f64);
                                 if self.k8s_mode {
                                     metrics
@@ -1571,11 +1564,11 @@ fn build_filter(raw: Option<&str>) -> Option<HashSet<String>> {
 
 #[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
 fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<MigTree> {
-    use std::os::raw::c_uint;
     use nvml_wrapper_sys::bindings::{
-        nvmlComputeInstanceInfo_t, nvmlDevice_t, nvmlGpuInstanceInfo_t, nvmlReturn_t,
-        nvmlReturn_enum_NVML_SUCCESS,
+        nvmlComputeInstanceInfo_t, nvmlDevice_t, nvmlGpuInstanceInfo_t,
+        nvmlReturn_enum_NVML_SUCCESS, nvmlReturn_t,
     };
+    use std::os::raw::c_uint;
 
     // Load NVML dynamically to bypass missing symbols in sys crate
     let lib = unsafe { libloading::Library::new("libnvidia-ml.so.1") }?;
@@ -1595,19 +1588,14 @@ fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mig
         index: std::os::raw::c_uint,
         mig_device: *mut nvmlDevice_t,
     ) -> nvmlReturn_t;
-    type NvmlDeviceGetDeviceHandleFromMigDeviceHandle = unsafe extern "C" fn(
-        mig_device: nvmlDevice_t,
-        device: *mut nvmlDevice_t,
-    ) -> nvmlReturn_t;
-    type NvmlDeviceGetGpuInstanceId = unsafe extern "C" fn(
-        device: nvmlDevice_t,
-        id: *mut std::os::raw::c_uint,
-    ) -> nvmlReturn_t;
-    type NvmlDeviceGetComputeInstanceId = unsafe extern "C" fn(
-        device: nvmlDevice_t,
-        id: *mut std::os::raw::c_uint,
-    ) -> nvmlReturn_t;
-    type NvmlGpuInstanceGetById = unsafe extern "C" fn( // Corrected function name
+    type NvmlDeviceGetDeviceHandleFromMigDeviceHandle =
+        unsafe extern "C" fn(mig_device: nvmlDevice_t, device: *mut nvmlDevice_t) -> nvmlReturn_t;
+    type NvmlDeviceGetGpuInstanceId =
+        unsafe extern "C" fn(device: nvmlDevice_t, id: *mut std::os::raw::c_uint) -> nvmlReturn_t;
+    type NvmlDeviceGetComputeInstanceId =
+        unsafe extern "C" fn(device: nvmlDevice_t, id: *mut std::os::raw::c_uint) -> nvmlReturn_t;
+    type NvmlGpuInstanceGetById = unsafe extern "C" fn(
+        // Corrected function name
         device: nvmlDevice_t,
         id: std::os::raw::c_uint,
         gpu_instance: *mut nvmlDevice_t,
@@ -1663,7 +1651,7 @@ fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mig
     let get_compute_instance_id: libloading::Symbol<NvmlDeviceGetComputeInstanceId> =
         unsafe { lib.get(b"nvmlDeviceGetComputeInstanceId") }?;
     let get_gpu_instance_by_id: libloading::Symbol<NvmlGpuInstanceGetById> =
-        unsafe { lib.get(b"nvmlGpuInstanceGetById") }?;
+        unsafe { lib.get(b"nvmlGpuInstanceGetById") }?; // Corrected function name
     let get_gpu_instance_info: libloading::Symbol<NvmlGpuInstanceGetInfo> =
         unsafe { lib.get(b"nvmlGpuInstanceGetInfo") }?;
     let get_gpu_instance_compute_instance_by_id: libloading::Symbol<
@@ -1671,8 +1659,7 @@ fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mig
     > = unsafe { lib.get(b"nvmlGpuInstanceGetComputeInstanceById") }?;
     let get_compute_instance_info: libloading::Symbol<NvmlComputeInstanceGetInfo> =
         unsafe { lib.get(b"nvmlComputeInstanceGetInfo") }?;
-    let get_uuid: libloading::Symbol<NvmlDeviceGetUUID> =
-        unsafe { lib.get(b"nvmlDeviceGetUUID") }?;
+    let get_uuid: libloading::Symbol<NvmlDeviceGetUUID> = unsafe { lib.get(b"nvmlDeviceGetUUID") }?;
     let get_memory_info: libloading::Symbol<NvmlDeviceGetMemoryInfo> =
         unsafe { lib.get(b"nvmlDeviceGetMemoryInfo") }?;
     let get_utilization_rates: libloading::Symbol<NvmlDeviceGetUtilizationRates> =
@@ -1762,7 +1749,11 @@ fn collect_mig_devices(nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mig
                 if let Some(gi_node) = gi_map.get(&gi_id) {
                     let mut ci_handle: nvmlDevice_t = std::ptr::null_mut();
                     if unsafe {
-                        get_gpu_instance_compute_instance_by_id(gi_node.handle, ci_id, &mut ci_handle)
+                        get_gpu_instance_compute_instance_by_id(
+                            gi_node.handle,
+                            ci_id,
+                            &mut ci_handle,
+                        )
                     } == nvmlReturn_enum_NVML_SUCCESS
                     {
                         let mut ci_info: nvmlComputeInstanceInfo_t = unsafe { std::mem::zeroed() };
