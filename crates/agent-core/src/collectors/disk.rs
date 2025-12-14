@@ -18,7 +18,7 @@ pub struct DiskCollector {
 impl DiskCollector {
     pub fn new(status: StatusState) -> Self {
         let system = System::new_with_specifics(RefreshKind::new());
-        DiskCollector {
+        Self {
             system,
             previous: HashMap::new(),
             status,
@@ -37,8 +37,7 @@ impl Collector for DiskCollector {
         let now = std::time::Instant::now();
         let dt = self
             .prev_instant
-            .map(|p| now.saturating_duration_since(p).as_secs_f64())
-            .unwrap_or(0.0);
+            .map_or(0.0, |p| now.saturating_duration_since(p).as_secs_f64());
         self.prev_instant = Some(now);
 
         self.system.refresh_disks_list();
@@ -76,7 +75,7 @@ impl Collector for DiskCollector {
         let mut root_io_ms_delta: Option<u64> = None;
 
         if let Some(map) = read_diskstats() {
-            for (dev, io) in map.iter() {
+            for (dev, io) in &map {
                 let prev = self.previous.get(dev).cloned().unwrap_or_default();
                 let rd_ops_delta = io.reads_completed.saturating_sub(prev.reads_completed);
                 let wr_ops_delta = io.writes_completed.saturating_sub(prev.writes_completed);

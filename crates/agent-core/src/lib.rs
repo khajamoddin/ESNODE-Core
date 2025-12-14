@@ -213,7 +213,7 @@ impl Agent {
             .set(0.0);
         metrics.degradation_score.set(0.0);
 
-        Ok(Agent {
+        Ok(Self {
             config,
             metrics,
             collectors,
@@ -224,7 +224,7 @@ impl Agent {
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
-        let Agent {
+        let Self {
             config,
             metrics,
             collectors,
@@ -259,7 +259,7 @@ impl Agent {
                     if let Err(err) = collector.collect(&metrics_clone).await {
                         warn!("collector {} failed: {:?}", collector.name(), err);
                         metrics_clone.inc_error(collector.name());
-                        status_state.record_error(collector.name(), format!("{:?}", err), now_ms);
+                        status_state.record_error(collector.name(), format!("{err:?}"), now_ms);
                         all_ok = false;
                     }
                     let duration = start.elapsed().as_secs_f64();
@@ -315,11 +315,7 @@ impl Agent {
             status: status.clone(),
             tsdb: local_tsdb.clone(),
             orchestrator: orchestrator_state,
-            orchestrator_allow_public: config
-                .orchestrator
-                .as_ref()
-                .map(|o| o.allow_public)
-                .unwrap_or(false),
+            orchestrator_allow_public: config.orchestrator.as_ref().is_some_and(|o| o.allow_public),
             listen_is_loopback: listen_is_loopback(&config.listen_address),
             orchestrator_token: config.orchestrator.as_ref().and_then(|o| o.token.clone()),
         };
@@ -331,12 +327,12 @@ impl Agent {
         tokio::select! {
             res = collection_task => {
                 if let Err(err) = res {
-                    return Err(anyhow::anyhow!("collection task panicked: {:?}", err));
+                    return Err(anyhow::anyhow!("collection task panicked: {err:?}"));
                 }
             },
             res = http_task => {
                 if let Err(err) = res {
-                    return Err(anyhow::anyhow!("http server task panicked: {:?}", err));
+                    return Err(anyhow::anyhow!("http server task panicked: {err:?}"));
                 }
             },
             _ = signal::ctrl_c() => {

@@ -31,7 +31,7 @@ pub struct NetworkCollector {
 impl NetworkCollector {
     pub fn new(status: StatusState) -> Self {
         let system = System::new_with_specifics(RefreshKind::new());
-        NetworkCollector {
+        Self {
             system,
             previous: HashMap::new(),
             status,
@@ -51,8 +51,7 @@ impl Collector for NetworkCollector {
         let now = std::time::Instant::now();
         let dt = self
             .prev_instant
-            .map(|p| now.saturating_duration_since(p).as_secs_f64())
-            .unwrap_or(0.0);
+            .map_or(0.0, |p| now.saturating_duration_since(p).as_secs_f64());
         self.prev_instant = Some(now);
 
         self.system.refresh_networks_list();
@@ -91,12 +90,7 @@ impl Collector for NetworkCollector {
 
             if iface != "lo" {
                 let score = rx_delta.saturating_add(tx_delta);
-                if score
-                    > best_iface
-                        .as_ref()
-                        .map(|b| b.1.saturating_add(b.2))
-                        .unwrap_or(0)
-                {
+                if score > best_iface.as_ref().map_or(0, |b| b.1.saturating_add(b.2)) {
                     best_iface = Some((iface.clone(), rx_delta, tx_delta, err_delta));
                 }
             }
@@ -107,7 +101,7 @@ impl Collector for NetworkCollector {
             .ok()
             .flatten();
         if let Some(map) = map {
-            for (iface, v) in map.iter() {
+            for (iface, v) in &map {
                 let prev = self.previous.entry(iface.clone()).or_default();
                 let rxp = v.rx_packets.saturating_sub(prev.rx_packets);
                 let txp = v.tx_packets.saturating_sub(prev.tx_packets);

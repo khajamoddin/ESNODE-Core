@@ -339,7 +339,7 @@ pub struct HostMetrics {
 
 impl StatusState {
     pub fn new(healthy: Arc<AtomicBool>) -> Self {
-        StatusState {
+        Self {
             healthy,
             node_power_microwatts: Arc::new(AtomicU64::new(0)),
             cpu_package_power_watts: Arc::new(RwLock::new(Vec::new())),
@@ -361,6 +361,7 @@ impl StatusState {
         }
     }
 
+    #[must_use]
     pub fn snapshot(&self) -> StatusSnapshot {
         let host = self.host.read().map(|h| h.clone()).unwrap_or_default();
         StatusSnapshot {

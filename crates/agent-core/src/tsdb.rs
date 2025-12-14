@@ -34,7 +34,7 @@ pub struct LocalTsdbConfig {
 
 impl From<&AgentConfig> for LocalTsdbConfig {
     fn from(value: &AgentConfig) -> Self {
-        LocalTsdbConfig {
+        Self {
             path: PathBuf::from(value.local_tsdb_path.clone()),
             retention_hours: value.local_tsdb_retention_hours,
             max_disk_mb: value.local_tsdb_max_disk_mb,
@@ -73,7 +73,7 @@ impl BlockWriter {
             .open(&samples_path)
             .await
             .with_context(|| format!("opening samples file {}", samples_path.display()))?;
-        Ok(BlockWriter {
+        Ok(Self {
             meta: BlockMeta {
                 start_ms,
                 end_ms,
@@ -146,7 +146,7 @@ impl LocalTsdb {
     pub fn new(config: LocalTsdbConfig) -> Result<Self> {
         std::fs::create_dir_all(&config.path)
             .with_context(|| format!("creating TSDB path {}", config.path.display()))?;
-        Ok(LocalTsdb {
+        Ok(Self {
             config,
             block_duration_ms: BLOCK_DURATION.as_millis() as i64,
             current: Mutex::new(None),
@@ -360,14 +360,14 @@ async fn read_block_index(dir: &Path) -> Result<BlockMeta> {
 }
 
 fn overlaps(start: i64, end: i64, from: Option<i64>, to: Option<i64>) -> bool {
-    let after_from = from.map(|f| end >= f).unwrap_or(true);
-    let before_to = to.map(|t| start <= t).unwrap_or(true);
+    let after_from = from.is_none_or(|f| end >= f);
+    let before_to = to.is_none_or(|t| start <= t);
     after_from && before_to
 }
 
 fn timestamp_in_range(ts: i64, from: Option<i64>, to: Option<i64>) -> bool {
-    let gte_from = from.map(|f| ts >= f).unwrap_or(true);
-    let lte_to = to.map(|t| ts <= t).unwrap_or(true);
+    let gte_from = from.is_none_or(|f| ts >= f);
+    let lte_to = to.is_none_or(|t| ts <= t);
     gte_from && lte_to
 }
 
@@ -396,7 +396,7 @@ fn format_export_line(sample: &Sample) -> String {
     let mut labels: Vec<_> = sample.labels.iter().collect();
     labels.sort_by_key(|(k, _)| *k);
     let labels_str = if labels.is_empty() {
-        "".to_string()
+        String::new()
     } else {
         let parts: Vec<String> = labels
             .into_iter()
@@ -443,6 +443,7 @@ fn dir_size_bytes(path: &Path) -> Option<u64> {
     Some(size)
 }
 
+#[must_use]
 pub fn samples_from_registry(registry: &MetricsRegistry, fallback_ts_ms: i64) -> Vec<Sample> {
     let families = registry.gather_families();
     let mut out = Vec::new();

@@ -1,10 +1,6 @@
 //! Guarded NVML FFI scaffolding for PCIe/NVSwitch/event helpers.
 //! These are best-effort and only built when `gpu-nvml-ffi-ext` is enabled.
 
-#[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
-use nvml_wrapper_sys::bindings::*;
-
-#[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
 /// Errors from extended NVML calls.
 #[derive(thiserror::Error, Debug)]
 pub enum NvmlExtError {
@@ -14,14 +10,20 @@ pub enum NvmlExtError {
     NvmlReturn(i32),
 }
 
-/// Best-effort PCIe counters (correctable errors, atomic requests).
+#[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
+use nvml_wrapper_sys::bindings::{
+    nvmlDevice_t, nvmlEventSet_t, nvmlFieldValue_t,
+    nvmlPcieUtilCounter_enum_NVML_PCIE_UTIL_TX_BYTES, nvmlReturn_enum_NVML_SUCCESS, nvmlReturn_t,
+};
+
+/// Best-effort `PCIe` counters (correctable errors, atomic requests).
 #[derive(Default, Debug)]
 pub struct PcieExt {
     pub correctable_errors: Option<u64>,
     pub atomic_requests: Option<u64>,
 }
 
-/// NVSwitch error counters placeholder.
+/// `NVSwitch` error counters placeholder.
 #[derive(Default, Debug)]
 pub struct NvSwitchExt {
     pub errors: Option<u64>,
@@ -34,6 +36,7 @@ pub struct FieldValues {
 }
 
 impl FieldValues {
+    #[must_use]
     pub fn get(&self, id: u32) -> Option<i64> {
         self.values
             .iter()
@@ -51,7 +54,7 @@ pub mod field {
     pub const FI_DEV_PCIE_OUTBOUND_ATOMICS_MASK: u32 = 228;
     pub const FI_DEV_PCIE_INBOUND_ATOMICS_MASK: u32 = 229;
 }
-/// Best-effort PCIe extended counters.
+/// Best-effort `PCIe` extended counters.
 ///
 /// # Safety
 ///
@@ -85,15 +88,15 @@ pub unsafe fn pcie_ext_counters(device: nvmlDevice_t) -> Result<PcieExt, NvmlExt
         let corr_ret = get_pcie_stats(
             device,
             nvmlPcieUtilCounter_enum_NVML_PCIE_UTIL_TX_BYTES,
-            &mut corr,
+            &raw mut corr,
         );
-        let atomic_ret = get_pcie_replay_counter(device, &mut atomic);
+        let atomic_ret = get_pcie_replay_counter(device, &raw mut atomic);
         let mut out = PcieExt::default();
         if corr_ret == nvmlReturn_enum_NVML_SUCCESS {
-            out.correctable_errors = Some(corr as u64);
+            out.correctable_errors = Some(u64::from(corr));
         }
         if atomic_ret == nvmlReturn_enum_NVML_SUCCESS {
-            out.atomic_requests = Some(atomic as u64);
+            out.atomic_requests = Some(u64::from(atomic));
         }
         if out.correctable_errors.is_none() && out.atomic_requests.is_none() {
             return Err(NvmlExtError::NotSupported);
@@ -103,7 +106,7 @@ pub unsafe fn pcie_ext_counters(device: nvmlDevice_t) -> Result<PcieExt, NvmlExt
 }
 
 #[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
-pub fn nvswitch_ext_counters(_device: nvmlDevice_t) -> Result<NvSwitchExt, NvmlExtError> {
+pub const fn nvswitch_ext_counters(_device: nvmlDevice_t) -> Result<NvSwitchExt, NvmlExtError> {
     Err(NvmlExtError::NotSupported)
 }
 
@@ -150,7 +153,7 @@ pub unsafe fn get_field_values(
 
 /// Placeholder event registration for MIG/GPU handles. Caller should fall back gracefully.
 #[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
-pub fn register_extended_events(
+pub const fn register_extended_events(
     _device: nvmlDevice_t,
     _event_set: nvmlEventSet_t,
 ) -> Result<(), NvmlExtError> {

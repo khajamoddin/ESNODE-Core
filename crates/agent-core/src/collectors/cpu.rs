@@ -33,7 +33,7 @@ impl CpuCollector {
         let refresh = RefreshKind::new().with_cpu(CpuRefreshKind::everything());
         let system = System::new_with_specifics(refresh);
         let tps = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
-        CpuCollector {
+        Self {
             system,
             status,
             prev: None,
@@ -58,8 +58,13 @@ impl Collector for CpuCollector {
 
         let cores = self.system.cpus().len() as u64;
         let avg_util = if cores > 0 {
-            let total: f32 = self.system.cpus().iter().map(|c| c.cpu_usage()).sum();
-            Some((total as f64) / (cores as f64))
+            let total: f32 = self
+                .system
+                .cpus()
+                .iter()
+                .map(sysinfo::CpuExt::cpu_usage)
+                .sum();
+            Some(f64::from(total) / (cores as f64))
         } else {
             None
         };
@@ -79,7 +84,7 @@ impl Collector for CpuCollector {
             metrics
                 .cpu_usage_percent
                 .with_label_values(&[label.as_str()])
-                .set(cpu.cpu_usage() as f64);
+                .set(f64::from(cpu.cpu_usage()));
         }
 
         let stat = tokio::task::spawn_blocking(read_proc_stat)

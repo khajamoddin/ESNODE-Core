@@ -66,6 +66,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct OrchestratorConfig {
     pub enabled: bool,
     /// Allow exposing orchestrator control API on non-loopback listeners.
@@ -117,6 +118,7 @@ pub struct Orchestrator {
 }
 
 impl Orchestrator {
+    #[must_use]
     pub fn new(initial_devices: Vec<Device>, config: OrchestratorConfig) -> Self {
         Self {
             config,
@@ -132,7 +134,7 @@ impl Orchestrator {
         }
     }
 
-    fn perf_score(&self, task: &Task, dev: &Device) -> f64 {
+    fn perf_score(task: &Task, dev: &Device) -> f64 {
         let peak_flops = dev.peak_flops_tflops * 1e12_f64;
         let eff_flops = peak_flops * (1.0 - dev.current_load).max(0.1);
         let time_seconds = task.est_flops / eff_flops.max(1e-6);
@@ -145,38 +147,37 @@ impl Orchestrator {
         -time_seconds * weight
     }
 
-    fn energy_score(&self, task: &Task, dev: &Device) -> f64 {
+    fn energy_score(task: &Task, dev: &Device) -> f64 {
         let peak_flops = dev.peak_flops_tflops * 1e12_f64;
         let eff_flops = peak_flops * (1.0 - dev.current_load).max(0.1);
         let time_seconds = task.est_flops / eff_flops.max(1e-6);
         let effective_load = (dev.current_load + 0.2).min(1.0);
-        let power_watts =
-            dev.power_watts_idle + (dev.power_watts_max - dev.power_watts_idle) * effective_load;
+        let power_watts = (dev.power_watts_max - dev.power_watts_idle)
+            .mul_add(effective_load, dev.power_watts_idle);
         power_watts * time_seconds
     }
 
-    fn congestion_penalty(&self, dev: &Device) -> f64 {
+    fn congestion_penalty(dev: &Device) -> f64 {
         dev.current_load.powi(2)
     }
 
-    fn data_movement_cost(&self, task: &Task, _dev: &Device) -> f64 {
+    fn data_movement_cost(task: &Task, _dev: &Device) -> f64 {
         task.est_bytes / 1e9_f64
     }
 
-    fn device_allowed(&self, task: &Task, dev: &Device) -> bool {
-        if let Some(kinds) = &task.preferred_kinds {
-            kinds.contains(&dev.kind)
-        } else {
-            true
-        }
+    fn device_allowed(task: &Task, dev: &Device) -> bool {
+        task.preferred_kinds
+            .as_ref()
+            .is_none_or(|kinds| kinds.contains(&dev.kind))
     }
 
+    #[must_use]
     pub fn pick_device_for_task(&self, task: &Task) -> Option<String> {
         let mut best_id: Option<String> = None;
         let mut best_score: f64 = f64::NEG_INFINITY;
 
         for (id, dev) in &self.devices {
-            if !self.device_allowed(task, dev) {
+            if !Self::device_allowed(task, dev) {
                 continue;
             }
             // Skip overloaded devices
@@ -184,15 +185,18 @@ impl Orchestrator {
                 continue;
             }
 
-            let perf = self.perf_score(task, dev);
-            let energy = self.energy_score(task, dev);
-            let congestion = self.congestion_penalty(dev);
-            let data_cost = self.data_movement_cost(task, dev);
+            let perf = Self::perf_score(task, dev);
+            let energy = Self::energy_score(task, dev);
+            let congestion = Self::congestion_penalty(dev);
+            let data_cost = Self::data_movement_cost(task, dev);
 
-            let score = self.alpha_perf * perf
-                - self.beta_energy * energy
-                - self.gamma_congestion * congestion
-                - self.delta_data * data_cost;
+            let score = self.delta_data.mul_add(
+                -data_cost,
+                self.gamma_congestion.mul_add(
+                    -congestion,
+                    self.alpha_perf.mul_add(perf, -(self.beta_energy * energy)),
+                ),
+            );
 
             if score > best_score {
                 best_score = score;
@@ -292,7 +296,7 @@ async fn heartbeat_handler(
         device = %id,
         devices_total = orch.devices.len()
     );
-    Ok(Json(format!("Device '{}' registered/updated.", id)))
+    Ok(Json(format!("Device '{id}' registered/updated.")))
 }
 
 #[derive(Serialize)]
@@ -349,7 +353,7 @@ async fn metrics_handler(
 
 fn authorize(headers: &axum::http::HeaderMap, token: &Option<String>) -> Result<(), StatusCode> {
     if let Some(tok) = token {
-        let expected = format!("Bearer {}", tok);
+        let expected = format!("Bearer {tok}");
         if let Some(h) = headers.get(axum::http::header::AUTHORIZATION) {
             if h.to_str().ok() == Some(expected.as_str()) {
                 tracing::info!(target: "audit", action = "orchestrator_auth_ok", token_present = true);

@@ -17,9 +17,9 @@ impl AgentClient {
             if listen_address.starts_with("http://") || listen_address.starts_with("https://") {
                 listen_address.to_string()
             } else {
-                format!("http://{}", listen_address)
+                format!("http://{listen_address}")
             };
-        AgentClient {
+        Self {
             base_url: normalized.trim_end_matches('/').to_string(),
         }
     }
@@ -64,9 +64,9 @@ impl AgentClient {
         let url = Url::parse(&format!("{}{}", self.base_url, path)).context("parsing URL")?;
         let host = url
             .host_str()
-            .ok_or_else(|| anyhow!("missing host in {}", url))?;
+            .ok_or_else(|| anyhow!("missing host in {url}"))?;
         let port = url.port_or_known_default().unwrap_or(80);
-        let addr: SocketAddr = format!("{}:{}", host, port)
+        let addr: SocketAddr = format!("{host}:{port}")
             .parse()
             .context("resolving address")?;
         let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2))
@@ -182,7 +182,7 @@ mod tests {
             }
         });
 
-        let client = AgentClient::new(&format!("{}", addr));
+        let client = AgentClient::new(&format!("{addr}"));
         let snapshot: StatusSnapshot = client.fetch_status().expect("status json");
         assert!(snapshot.healthy);
         assert_eq!(snapshot.cpu_cores, Some(4));

@@ -26,9 +26,9 @@ else
 fi
 cd "${ROOT_DIR}"
 if [[ -n "${TARGET}" ]]; then
-  cargo build --release --target "${TARGET}" --bin esnode-core
+  cargo build --release --target "${TARGET}" --bin esnode-core --features gpu-nvml-ffi
 else
-  cargo build --release --bin esnode-core
+  cargo build --release --bin esnode-core --features gpu-nvml-ffi
 fi
 
 OUT_DIR_PUBLIC="${ROOT_DIR}/public/distribution/esnode-core"
@@ -136,7 +136,7 @@ build_windows() {
   local target="x86_64-pc-windows-gnu"
   if rustup target list | grep -q "^${target} (installed)"; then
     echo "==> Building Windows target (${target})"
-    cargo build --release --bin esnode-core --target "${target}"
+    cargo build --release --bin esnode-core --target "${target}" --features gpu-nvml-ffi
     local bin_win="${ROOT_DIR}/target/${target}/release/esnode-core.exe"
     if [[ -f "${bin_win}" ]]; then
       mkdir -p "${OUT_DIR_PUBLIC}/windows"

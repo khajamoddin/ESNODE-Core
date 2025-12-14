@@ -18,7 +18,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 #[derive(Parser, Debug)]
 #[command(name = "esnode-core", about = "GPU-aware host metrics exporter")]
 struct Cli {
-    /// Optional path to configuration file (TOML). Also read from ESNODE_CONFIG.
+    /// Optional path to configuration file (TOML). Also read from `ESNODE_CONFIG`.
     #[arg(long, env = "ESNODE_CONFIG")]
     config: Option<PathBuf>,
 
@@ -54,7 +54,7 @@ struct Cli {
     #[arg(long, env = "ESNODE_ENABLE_GPU")]
     enable_gpu: Option<bool>,
 
-    /// Enable or disable AMD GPU collector (ROCm)
+    /// Enable or disable AMD GPU collector (`ROCm`)
     #[arg(long, env = "ESNODE_ENABLE_GPU_AMD")]
     enable_gpu_amd: Option<bool>,
 
@@ -122,7 +122,7 @@ struct Cli {
     #[arg(long, env = "ESNODE_ENABLE_APP")]
     pub enable_app: Option<bool>,
 
-    /// URL for application metrics (e.g. http://localhost:8000/metrics)
+    /// URL for application metrics (e.g. <http://localhost:8000/metrics>)
     #[arg(long, env = "ESNODE_APP_METRICS_URL")]
     pub app_metrics_url: Option<String>,
 
@@ -247,7 +247,10 @@ async fn main() -> Result<()> {
         }
         Command::EnableMetricSet { set } => command_toggle_metric_set(&config_path, *set, true),
         Command::DisableMetricSet { set } => command_toggle_metric_set(&config_path, *set, false),
-        Command::Profiles => command_profiles(),
+        Command::Profiles => {
+            command_profiles();
+            Ok(())
+        }
         Command::Diagnostics => {
             let client = AgentClient::new(&config.listen_address);
             command_diagnostics(&client)
@@ -266,16 +269,16 @@ async fn main() -> Result<()> {
         Command::Server { action } => {
             match action {
                 ServerCommand::Connect { address, _token } => {
-                    command_server_connect(&config_path, &config, address.clone(), None)?
+                    command_server_connect(&config_path, &config, address, None)?;
                 }
                 ServerCommand::Disconnect => command_server_disconnect(&config_path, &config)?,
-                ServerCommand::Status => command_server_status(&config)?,
+                ServerCommand::Status => command_server_status(&config),
             }
             Ok(())
         }
         Command::Config { action } => match action {
             ConfigCommand::Show => command_config_show(&config_path, &config),
-            ConfigCommand::Set { key_value } => command_config_set(&config_path, key_value.clone()),
+            ConfigCommand::Set { key_value } => command_config_set(&config_path, key_value),
         },
     }
 }
@@ -371,57 +374,57 @@ fn init_tracing(config: &AgentConfig) {
 }
 
 fn command_status(client: &AgentClient, no_color: bool) -> Result<()> {
+    use std::fmt::Write;
     let _ = no_color;
     let snapshot = client.fetch_status()?;
     let mut out = String::new();
     out.push_str("Node status\n");
     out.push_str("ESNODE status (basic profile)\n");
-    out.push_str(&format!(
-        "  Healthy: {}\n",
+    writeln!(
+        &mut out,
+        "  Healthy: {}",
         if snapshot.healthy { "yes" } else { "no" }
-    ));
-    out.push_str(&format!("  Load 1m: {:.2}\n", snapshot.load_avg_1m));
-    out.push_str(&format!(
-        "  Node power: {}\n",
+    )?;
+    writeln!(&mut out, "  Load 1m: {:.2}", snapshot.load_avg_1m)?;
+    writeln!(
+        &mut out,
+        "  Node power: {}",
         snapshot
             .node_power_watts
-            .map(|v| format!("{v:.1} W"))
-            .unwrap_or_else(|| "n/a".to_string())
-    ));
-    out.push_str(&format!("  GPUs: {} detected\n", snapshot.gpus.len()));
+            .map_or_else(|| "n/a".to_string(), |v| format!("{v:.1} W"))
+    )?;
+    writeln!(&mut out, "  GPUs: {} detected", snapshot.gpus.len())?;
     let avg_util = average(
-        snapshot
+        &snapshot
             .gpus
             .iter()
             .filter_map(|g| g.util_percent)
             .collect::<Vec<_>>(),
     );
     let avg_power = average(
-        snapshot
+        &snapshot
             .gpus
             .iter()
             .filter_map(|g| g.power_watts)
             .collect::<Vec<_>>(),
     );
-    out.push_str(&format!("    Avg util: {:.1}%\n", avg_util.unwrap_or(0.0)));
-    out.push_str(&format!(
-        "    Avg power: {:.1} W\n",
-        avg_power.unwrap_or(0.0)
-    ));
+    writeln!(&mut out, "    Avg util: {:.1}%", avg_util.unwrap_or(0.0))?;
+    writeln!(&mut out, "    Avg power: {:.1} W", avg_power.unwrap_or(0.0))?;
     if !snapshot.last_errors.is_empty() {
         out.push_str("  Recent errors:\n");
-        for err in snapshot.last_errors.iter() {
-            out.push_str(&format!(
-                "    [{}] {} ({})\n",
+        for err in &snapshot.last_errors {
+            writeln!(
+                &mut out,
+                "    [{}] {} ({})",
                 err.collector, err.message, err.unix_ms
-            ));
+            )?;
         }
     }
     print!("{out}");
     Ok(())
 }
 
-fn average(values: Vec<f64>) -> Option<f64> {
+fn average(values: &[f64]) -> Option<f64> {
     if values.is_empty() {
         None
     } else {
@@ -430,7 +433,7 @@ fn average(values: Vec<f64>) -> Option<f64> {
 }
 
 fn command_metrics(client: &AgentClient, profile: MetricsProfile) -> Result<()> {
-    println!("ESNODE metrics snapshot (profile: {:?})", profile);
+    println!("ESNODE metrics snapshot (profile: {profile:?})");
     match client.fetch_metrics_text() {
         Ok(body) => {
             println!("{body}");
@@ -440,13 +443,12 @@ fn command_metrics(client: &AgentClient, profile: MetricsProfile) -> Result<()> 
     }
 }
 
-fn command_profiles() -> Result<()> {
+fn command_profiles() {
     println!("Available profiles:");
     println!("  basic     -> host + gpu core + power");
     println!("  full      -> everything (host, gpu, power, mcp, app)");
     println!("  gpu-only  -> GPU core + power only");
     println!("  power-only-> host power + gpu power");
-    Ok(())
 }
 
 fn command_toggle_metric_set(path: &Path, set: MetricSet, enable: bool) -> Result<()> {
@@ -519,8 +521,7 @@ fn command_diagnostics(client: &AgentClient) -> Result<()> {
                 "  Node power: {}",
                 status
                     .node_power_watts
-                    .map(|v| format!("{v:.1} W"))
-                    .unwrap_or_else(|| "n/a".to_string())
+                    .map_or_else(|| "n/a".to_string(), |v| format!("{v:.1} W"))
             );
             Ok(())
         }
@@ -534,7 +535,7 @@ fn command_config_show(path: &Path, effective: &AgentConfig) -> Result<()> {
     Ok(())
 }
 
-fn command_config_set(path: &Path, pair: String) -> Result<()> {
+fn command_config_set(path: &Path, pair: &str) -> Result<()> {
     let (key, value) = pair
         .split_once('=')
         .ok_or_else(|| anyhow!("use key=value syntax"))?;
@@ -570,7 +571,7 @@ fn apply_config_kv(config: &mut AgentConfig, key: &str, val: &str) -> Result<()>
         "managed_last_contact_unix_ms" => config.managed_last_contact_unix_ms = Some(val.parse()?),
         "node_power_envelope_watts" => config.node_power_envelope_watts = Some(val.parse()?),
         "log_level" => config.log_level = parse_log_level(Some(val))?.unwrap(),
-        other => bail!("unknown config key {}", other),
+        other => bail!("unknown config key {other}"),
     }
     Ok(())
 }
@@ -583,32 +584,33 @@ fn ensure_local_control(config: &AgentConfig) -> Result<()> {
 }
 
 fn agent_mode(config: &AgentConfig) -> AgentMode {
-    if let Some(srv) = &config.managed_server {
-        AgentMode::Managed(ManagedMetadata {
-            server: Some(srv.clone()),
-            cluster_id: config.managed_cluster_id.clone(),
-            node_id: config.managed_node_id.clone(),
-            last_contact_unix_ms: config.managed_last_contact_unix_ms,
-            state: if config.managed_last_contact_unix_ms.is_some() {
-                "CONNECTED".to_string()
-            } else {
-                "DEGRADED".to_string()
-            },
+    config
+        .managed_server
+        .as_ref()
+        .map_or(AgentMode::Standalone, |srv| {
+            AgentMode::Managed(ManagedMetadata {
+                server: Some(srv.clone()),
+                cluster_id: config.managed_cluster_id.clone(),
+                node_id: config.managed_node_id.clone(),
+                last_contact_unix_ms: config.managed_last_contact_unix_ms,
+                state: if config.managed_last_contact_unix_ms.is_some() {
+                    "CONNECTED".to_string()
+                } else {
+                    "DEGRADED".to_string()
+                },
+            })
         })
-    } else {
-        AgentMode::Standalone
-    }
 }
 
 fn command_server_connect(
     path: &Path,
     current: &AgentConfig,
-    address: String,
+    address: &str,
     token: Option<String>,
 ) -> Result<()> {
     let mut config = current.clone();
-    config.managed_server = Some(address.clone());
-    config.managed_join_token = token.clone();
+    config.managed_server = Some(address.to_string());
+    config.managed_join_token.clone_from(&token);
     if config.managed_node_id.is_none() {
         config.managed_node_id = Some(default_node_id());
     }
@@ -617,7 +619,7 @@ fn command_server_connect(
     }
     config.managed_last_contact_unix_ms = Some(chrono::Utc::now().timestamp_millis() as u64);
     persist_config(path, &config)?;
-    println!("Connected to ESNODE-Pulse at {}", address);
+    println!("Connected to ESNODE-Pulse at {address}");
     if let Some(_tok) = token {
         println!("Join token persisted");
     }
@@ -636,11 +638,11 @@ fn command_server_disconnect(path: &Path, current: &AgentConfig) -> Result<()> {
     Ok(())
 }
 
-fn command_server_status(config: &AgentConfig) -> Result<()> {
+fn command_server_status(config: &AgentConfig) {
     if let Some(server) = &config.managed_server {
         let degraded = config.managed_last_contact_unix_ms.is_none();
         println!("Managed by ESNODE-Pulse");
-        println!("  Server: {}", server);
+        println!("  Server: {server}");
         println!(
             "  Cluster ID: {}",
             config
@@ -656,7 +658,7 @@ fn command_server_status(config: &AgentConfig) -> Result<()> {
                 .unwrap_or_else(default_node_id)
         );
         if let Some(last) = config.managed_last_contact_unix_ms {
-            println!("  Last contact (unix ms): {}", last);
+            println!("  Last contact (unix ms): {last}");
         } else {
             println!("  Last contact: unknown (degraded)");
         }
@@ -667,7 +669,6 @@ fn command_server_status(config: &AgentConfig) -> Result<()> {
     } else {
         println!("Not connected to any ESNODE-Pulse (standalone)");
     }
-    Ok(())
 }
 
 fn default_node_id() -> String {
@@ -690,7 +691,7 @@ mod tests {
         let cli = Cli::parse_from(["esnode-core", "metrics", "full"]);
         match cli.command {
             Some(Command::Metrics { profile }) => assert!(matches!(profile, MetricsProfile::Full)),
-            other => panic!("unexpected {:?}", other),
+            other => panic!("unexpected {other:?}"),
         }
     }
 

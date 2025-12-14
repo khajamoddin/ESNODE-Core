@@ -24,7 +24,7 @@ impl AppCollector {
             .timeout(Duration::from_secs(2))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        AppCollector {
+        Self {
             url,
             status,
             last_tokens: None,
@@ -51,7 +51,7 @@ impl AppCollector {
         let mut found = false;
 
         for line in body.lines() {
-            if line.starts_with("#") {
+            if line.starts_with('#') {
                 continue;
             }
             // Support vLLM, TGI, and generic counters

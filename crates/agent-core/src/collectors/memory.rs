@@ -18,7 +18,7 @@ pub struct MemoryCollector {
 impl MemoryCollector {
     pub fn new(status: StatusState) -> Self {
         let system = System::new_with_specifics(RefreshKind::new());
-        MemoryCollector {
+        Self {
             system,
             prev_pg_in_bytes: None,
             prev_pg_out_bytes: None,

@@ -117,8 +117,8 @@ impl GpuCollector {
                             nvlink_err_prev: HashMap::new(),
                             enable_mig: config.enable_gpu_mig,
                             enable_events: config.enable_gpu_events,
-                            visible_filter: visible_filter.clone(),
-                            mig_config_filter: mig_cfg_filter.clone(),
+                            visible_filter,
+                            mig_config_filter: mig_cfg_filter,
                             k8s_mode: config.k8s_mode,
                             resource_prefix: if config.k8s_mode {
                                 "nvidia.com"
@@ -167,7 +167,7 @@ impl GpuCollector {
                         event_rx: None,
                         status,
                     },
-                    Some(format!("GPU collector disabled: {}", e)),
+                    Some(format!("GPU collector disabled: {e}")),
                 ),
             }
         }
@@ -244,7 +244,7 @@ impl Collector for GpuCollector {
             let event_set: Option<()> = None;
             #[cfg(not(target_os = "linux"))]
             let _ = &event_set;
-            let _events_enabled = self.enable_events;
+            let events_enabled = self.enable_events;
             #[cfg(not(target_os = "linux"))]
             if events_enabled {
                 tracing::debug!(
@@ -254,9 +254,7 @@ impl Collector for GpuCollector {
             for idx in 0..count {
                 let device = nvml.device_by_index(idx)?;
                 let gpu_label = idx.to_string();
-                let uuid_string = device
-                    .uuid()
-                    .unwrap_or_else(|_| format!("GPU-{}", gpu_label));
+                let uuid_string = device.uuid().unwrap_or_else(|_| format!("GPU-{gpu_label}"));
                 if let Some(filter) = &self.visible_filter {
                     if !filter.contains(&uuid_string) && !filter.contains(&gpu_label) {
                         continue;
@@ -347,14 +345,14 @@ impl Collector for GpuCollector {
                     metrics
                         .gpu_utilization_percent
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(util.gpu as f64);
+                        .set(f64::from(util.gpu));
                     if self.k8s_mode {
                         metrics
                             .gpu_utilization_percent_compat
                             .with_label_values(&[compat_label.as_str()])
-                            .set(util.gpu as f64);
+                            .set(f64::from(util.gpu));
                     }
-                    status.util_percent = Some(util.gpu as f64);
+                    status.util_percent = Some(f64::from(util.gpu));
                 }
 
                 if let Ok(memory) = device.memory_info() {
@@ -380,28 +378,28 @@ impl Collector for GpuCollector {
                     metrics
                         .gpu_temperature_celsius
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(temp as f64);
+                        .set(f64::from(temp));
                     if self.k8s_mode {
                         metrics
                             .gpu_temperature_celsius_compat
                             .with_label_values(&[compat_label.as_str()])
-                            .set(temp as f64);
+                            .set(f64::from(temp));
                     }
-                    status.temperature_celsius = Some(temp as f64);
+                    status.temperature_celsius = Some(f64::from(temp));
                 }
 
                 if let Ok(power) = device.power_usage() {
                     metrics
                         .gpu_power_watts
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(power as f64 / 1000.0);
+                        .set(f64::from(power) / 1000.0);
                     if self.k8s_mode {
                         metrics
                             .gpu_power_watts_compat
                             .with_label_values(&[compat_label.as_str()])
-                            .set(power as f64 / 1000.0);
+                            .set(f64::from(power) / 1000.0);
                     }
-                    let watts = power as f64 / 1000.0;
+                    let watts = f64::from(power) / 1000.0;
                     status.power_watts = Some(watts);
                     if let Some((prev_watts, ts)) = self.last_power.get(&idx) {
                         let dt = now.saturating_duration_since(*ts).as_secs_f64();
@@ -420,45 +418,45 @@ impl Collector for GpuCollector {
                     metrics
                         .gpu_power_limit_watts
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(limit as f64 / 1000.0);
+                        .set(f64::from(limit) / 1000.0);
                 }
 
                 if let Ok(fan) = device.fan_speed(0) {
                     metrics
                         .gpu_fan_speed_percent
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(fan as f64);
-                    status.fan_percent = Some(fan as f64);
+                        .set(f64::from(fan));
+                    status.fan_percent = Some(f64::from(fan));
                 }
 
                 if let Ok(sm_clock) = device.clock_info(Clock::SM) {
                     metrics
                         .gpu_clock_sm_mhz
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(sm_clock as f64);
-                    status.clock_sm_mhz = Some(sm_clock as f64);
+                        .set(f64::from(sm_clock));
+                    status.clock_sm_mhz = Some(f64::from(sm_clock));
                 }
 
                 if let Ok(mem_clock) = device.clock_info(Clock::Memory) {
                     metrics
                         .gpu_clock_mem_mhz
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(mem_clock as f64);
-                    status.clock_mem_mhz = Some(mem_clock as f64);
+                        .set(f64::from(mem_clock));
+                    status.clock_mem_mhz = Some(f64::from(mem_clock));
                 }
 
                 if let Ok(gfx_clock) = device.clock_info(Clock::Graphics) {
                     metrics
                         .gpu_clock_graphics_mhz
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(gfx_clock as f64);
+                        .set(f64::from(gfx_clock));
                 }
                 if let Ok(pstate) = device.performance_state() {
                     let p_val = pstate as u32;
                     metrics
                         .gpu_pstate
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(p_val as f64);
+                        .set(f64::from(p_val));
                     health.pstate = Some(p_val);
                 }
                 if let Ok(bar1) = device.bar1_memory_info() {
@@ -477,15 +475,15 @@ impl Collector for GpuCollector {
                     metrics
                         .gpu_encoder_utilization_percent
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(enc_info.utilization as f64);
-                    health.encoder_util_percent = Some(enc_info.utilization as f64);
+                        .set(f64::from(enc_info.utilization));
+                    health.encoder_util_percent = Some(f64::from(enc_info.utilization));
                 }
                 if let Ok(dec_info) = device.decoder_utilization() {
                     metrics
                         .gpu_decoder_utilization_percent
                         .with_label_values(&[uuid_label, gpu_label.as_str()])
-                        .set(dec_info.utilization as f64);
-                    health.decoder_util_percent = Some(dec_info.utilization as f64);
+                        .set(f64::from(dec_info.utilization));
+                    health.decoder_util_percent = Some(f64::from(dec_info.utilization));
                 }
 
                 // ECC and throttle reasons not available in nvml-wrapper 0.9; skip gracefully.
@@ -500,7 +498,7 @@ impl Collector for GpuCollector {
                         device.total_ecc_errors(MemoryError::Uncorrected, counter.clone());
                     if let (Ok(c), Ok(u)) = (corrected, uncorrected) {
                         let total = c.saturating_add(u);
-                        let key = format!("{}:{}", gpu_label, label);
+                        let key = format!("{gpu_label}:{label}");
                         let prev = *self.ecc_prev.get(&key).unwrap_or(&0);
                         if total >= prev {
                             let delta = total - prev;
@@ -686,7 +684,7 @@ impl Collector for GpuCollector {
                         let mut last_rx_kb: Option<u32> = None;
                         if let Ok(tx_kb) = device.pcie_throughput(PcieUtilCounter::Send) {
                             last_tx_kb = Some(tx_kb);
-                            let delta = (tx_kb as f64 * 1024.0 * dt) as u64;
+                            let delta = (f64::from(tx_kb) * 1024.0 * dt) as u64;
                             metrics
                                 .gpu_pcie_tx_bytes_total
                                 .with_label_values(&[uuid_label, gpu_label.as_str()])
@@ -694,7 +692,7 @@ impl Collector for GpuCollector {
                         }
                         if let Ok(rx_kb) = device.pcie_throughput(PcieUtilCounter::Receive) {
                             last_rx_kb = Some(rx_kb);
-                            let delta = (rx_kb as f64 * 1024.0 * dt) as u64;
+                            let delta = (f64::from(rx_kb) * 1024.0 * dt) as u64;
                             metrics
                                 .gpu_pcie_rx_bytes_total
                                 .with_label_values(&[uuid_label, gpu_label.as_str()])
@@ -711,9 +709,9 @@ impl Collector for GpuCollector {
                                 device.max_pcie_link_width(),
                                 device.pcie_link_speed(),
                             ) {
-                                let bytes_per_s = ((tx_kb + rx_kb) as f64) * 1024.0;
+                                let bytes_per_s = f64::from(tx_kb + rx_kb) * 1024.0;
                                 let lane_budget_bytes =
-                                    pcie_lane_bytes_per_sec(gen, speed) * (width as f64).max(1.0);
+                                    pcie_lane_bytes_per_sec(gen, speed) * f64::from(width).max(1.0);
                                 if lane_budget_bytes > 0.0 {
                                     let pct = (bytes_per_s / lane_budget_bytes).min(1.0) * 100.0;
                                     metrics
@@ -832,18 +830,18 @@ impl Collector for GpuCollector {
                 metrics
                     .pcie_link_width
                     .with_label_values(&[uuid_label, gpu_label.as_str()])
-                    .set(device.current_pcie_link_width().unwrap_or(0) as f64);
+                    .set(f64::from(device.current_pcie_link_width().unwrap_or(0)));
                 metrics
                     .pcie_link_gen
                     .with_label_values(&[uuid_label, gpu_label.as_str()])
-                    .set(device.current_pcie_link_gen().unwrap_or(0) as f64);
+                    .set(f64::from(device.current_pcie_link_gen().unwrap_or(0)));
                 if let Ok(replay) = device.pcie_replay_counter() {
                     let prev = self.last_pcie_replay.get(&idx).copied().unwrap_or(0);
                     if replay >= prev {
                         metrics
                             .gpu_pcie_replay_errors_total
                             .with_label_values(&[uuid_label, gpu_label.as_str()])
-                            .inc_by((replay - prev) as u64);
+                            .inc_by(u64::from(replay - prev));
                     }
                     self.last_pcie_replay.insert(idx, replay);
                 } else {
@@ -898,7 +896,7 @@ impl Collector for GpuCollector {
                                     .set(1.0);
                             }
                             for mig in &migs.devices {
-                                let mig_id_string = mig.id.to_string();
+                                let mig_id_string = mig.id.clone();
                                 let mig_label =
                                     mig.uuid.as_deref().unwrap_or(mig_id_string.as_str());
                                 let compat_label = if self.k8s_mode {
@@ -917,7 +915,7 @@ impl Collector for GpuCollector {
                                             gpu_label.as_str(),
                                             mig_label,
                                         ])
-                                        .set(util as f64);
+                                        .set(f64::from(util));
                                     if self.k8s_mode {
                                         metrics
                                             .mig_utilization_percent
@@ -926,7 +924,7 @@ impl Collector for GpuCollector {
                                                 gpu_label.as_str(),
                                                 compat_label.as_str(),
                                             ])
-                                            .set(util as f64);
+                                            .set(f64::from(util));
                                     }
                                 }
                                 if let Some(total) = mig.memory_total_bytes {
@@ -977,7 +975,7 @@ impl Collector for GpuCollector {
                                             gpu_label.as_str(),
                                             mig_label,
                                         ])
-                                        .set(sm as f64);
+                                        .set(f64::from(sm));
                                     if self.k8s_mode {
                                         metrics
                                             .mig_sm_count
@@ -986,7 +984,7 @@ impl Collector for GpuCollector {
                                                 gpu_label.as_str(),
                                                 compat_label.as_str(),
                                             ])
-                                            .set(sm as f64);
+                                            .set(f64::from(sm));
                                     }
                                 }
                                 // Best-effort per-MIG ECC and BAR1 info using MigDeviceStatus fields
@@ -1176,7 +1174,7 @@ fn k8s_resource_name(prefix: &str, mig_profile: Option<&str>) -> String {
     if let Some(profile) = mig_profile {
         format!("{}/mig-{}", prefix, profile.replace('.', "-"))
     } else {
-        format!("{}/gpu", prefix)
+        format!("{prefix}/gpu")
     }
 }
 
@@ -1218,7 +1216,7 @@ fn pcie_lane_bytes_per_sec(_gen: u32, speed_mt_s: u32) -> f64 {
     // Then `speed_mt_s * 1024 * 1024` would be Bytes/s.
     // However, the original code used `* 1000.0` for the `PcieLinkMaxSpeed` values.
     // Let's stick to the original scaling: `speed_mt_s` is in "units of 1000 KB/s".
-    (speed_mt_s as f64) * 1_000_000.0 / 8.0 // Convert MT/s to Bytes/s (assuming 1 transfer = 1 bit)
+    f64::from(speed_mt_s) * 1_000_000.0 / 8.0 // Convert MT/s to Bytes/s (assuming 1 transfer = 1 bit)
 }
 
 #[cfg(feature = "gpu")]
@@ -1339,7 +1337,8 @@ fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mi
     let mut current_mode = 0;
     let mut pending = 0;
     let parent_handle = unsafe { parent.handle() };
-    let mig_mode_res = unsafe { get_mig_mode(parent_handle, &mut current_mode, &mut pending) };
+    let mig_mode_res =
+        unsafe { get_mig_mode(parent_handle, &raw mut current_mode, &raw mut pending) };
     let supported = mig_mode_res == nvmlReturn_enum_NVML_SUCCESS;
     // NVML_DEVICE_MIG_ENABLE is 1
     let enabled = current_mode == 1;
@@ -1355,7 +1354,7 @@ fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mi
     }
 
     let mut max_count = 0;
-    unsafe { get_max_mig_device_count(parent_handle, &mut max_count) };
+    unsafe { get_max_mig_device_count(parent_handle, &raw mut max_count) };
 
     let mut devices = Vec::new();
     let mut gi_map: HashMap<u32, GpuInstanceNode> = HashMap::new();
@@ -1364,11 +1363,11 @@ fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mi
 
     for idx in 0..max_count {
         let mut mig_handle: nvmlDevice_t = std::ptr::null_mut();
-        if unsafe { get_mig_device_handle_by_index(parent_handle, idx, &mut mig_handle) }
+        if unsafe { get_mig_device_handle_by_index(parent_handle, idx, &raw mut mig_handle) }
             == nvmlReturn_enum_NVML_SUCCESS
         {
             let mut full_handle: nvmlDevice_t = std::ptr::null_mut();
-            unsafe { get_device_handle_from_mig_device_handle(mig_handle, &mut full_handle) };
+            unsafe { get_device_handle_from_mig_device_handle(mig_handle, &raw mut full_handle) };
 
             let mut uuid_buf = [0i8; 96]; // NVML_DEVICE_UUID_V2_BUFFER_SIZE
             let _ = unsafe { get_uuid(mig_handle, uuid_buf.as_mut_ptr(), uuid_buf.len() as u32) };
@@ -1383,21 +1382,21 @@ fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mi
 
             // Extract GI/CI to map hierarchy
             let mut gi_id = 0;
-            let _ = unsafe { get_gpu_instance_id(mig_handle, &mut gi_id) };
+            let _ = unsafe { get_gpu_instance_id(mig_handle, &raw mut gi_id) };
             let mut ci_id = 0;
-            let _ = unsafe { get_compute_instance_id(mig_handle, &mut ci_id) };
+            let _ = unsafe { get_compute_instance_id(mig_handle, &raw mut ci_id) };
 
             // Populate GI info best-effort
             if gi_id > 0 && !gi_map.contains_key(&gi_id) {
                 let mut gi_handle: nvmlDevice_t = std::ptr::null_mut();
-                if unsafe { get_gpu_instance_by_id(parent_handle, gi_id, &mut gi_handle) }
+                if unsafe { get_gpu_instance_by_id(parent_handle, gi_id, &raw mut gi_handle) }
                     == nvmlReturn_enum_NVML_SUCCESS
                 {
                     gi_handles.insert(gi_id, gi_handle);
 
                     let mut gi_info: nvmlGpuInstanceInfo_t = unsafe { std::mem::zeroed() };
                     // gi_info.version = ...; // Skip version if unavailable, rely on zeroed/default
-                    let _ = unsafe { get_gpu_instance_info(gi_handle, &mut gi_info) };
+                    let _ = unsafe { get_gpu_instance_info(gi_handle, &raw mut gi_info) };
                     let placement = Some(format!(
                         "{}:slice{}",
                         gi_info.placement.start, gi_info.placement.size
@@ -1434,14 +1433,15 @@ fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mi
                             get_gpu_instance_compute_instance_by_id(
                                 gi_handle,
                                 ci_id,
-                                &mut ci_handle,
+                                &raw mut ci_handle,
                             )
                         } == nvmlReturn_enum_NVML_SUCCESS
                         {
                             let mut ci_info: nvmlComputeInstanceInfo_t =
                                 unsafe { std::mem::zeroed() };
                             // ci_info.version = ...; // Skip version
-                            let _ = unsafe { get_compute_instance_info(ci_handle, &mut ci_info) };
+                            let _ =
+                                unsafe { get_compute_instance_info(ci_handle, &raw mut ci_info) };
                             ci_nodes.push(ComputeInstanceNode {
                                 gpu_instance_id: gi_id,
                                 id: ci_id,
@@ -1466,19 +1466,21 @@ fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mi
 
             {
                 let mut m = unsafe { std::mem::zeroed() };
-                if unsafe { get_memory_info(mig_handle, &mut m) } == nvmlReturn_enum_NVML_SUCCESS {
+                if unsafe { get_memory_info(mig_handle, &raw mut m) }
+                    == nvmlReturn_enum_NVML_SUCCESS
+                {
                     mem_info = Some(m);
                 }
 
                 let mut u = unsafe { std::mem::zeroed() };
-                if unsafe { get_utilization_rates(mig_handle, &mut u) }
+                if unsafe { get_utilization_rates(mig_handle, &raw mut u) }
                     == nvmlReturn_enum_NVML_SUCCESS
                 {
                     util_gpu = Some(u.gpu);
                 }
 
                 let mut b = unsafe { std::mem::zeroed() };
-                if unsafe { get_bar1_memory_info(mig_handle, &mut b) }
+                if unsafe { get_bar1_memory_info(mig_handle, &raw mut b) }
                     == nvmlReturn_enum_NVML_SUCCESS
                 {
                     bar1 = Some(b);
@@ -1489,23 +1491,23 @@ fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<Mi
                 // NVML_ECC_COUNTER_TYPE_VOLATILE = 0
                 // NVML_MEMORY_ERROR_TYPE_CORRECTED = 1
                 // NVML_MEMORY_ERROR_TYPE_UNCORRECTED = 2
-                if unsafe { get_total_ecc_errors(mig_handle, 1, 0, &mut c_count) }
+                if unsafe { get_total_ecc_errors(mig_handle, 1, 0, &raw mut c_count) }
                     == nvmlReturn_enum_NVML_SUCCESS
                 {
                     ecc_cor = Some(c_count);
                 }
-                if unsafe { get_total_ecc_errors(mig_handle, 2, 0, &mut u_count) }
+                if unsafe { get_total_ecc_errors(mig_handle, 2, 0, &raw mut u_count) }
                     == nvmlReturn_enum_NVML_SUCCESS
                 {
                     ecc_uncor = Some(u_count);
                 }
             }
 
-            let mig_id = format!("mig{}", idx);
+            let mig_id = format!("mig{idx}");
             let placement_str = gi_map
                 .get(&gi_id)
                 .and_then(|g| g.placement.clone())
-                .unwrap_or_else(|| format!("gi{}", gi_id));
+                .unwrap_or_else(|| format!("gi{gi_id}"));
             let profile_str = gi_map
                 .get(&gi_id)
                 .and_then(|g| g.profile_id)

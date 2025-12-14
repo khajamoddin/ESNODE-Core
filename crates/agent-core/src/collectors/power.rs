@@ -50,7 +50,7 @@ impl PowerCollector {
     pub fn new(status: StatusState, envelope_watts: Option<f64>) -> Self {
         let rapl_zones = discover_rapl();
         let node_power_candidates = discover_node_power();
-        PowerCollector {
+        Self {
             rapl_zones,
             node_power_candidates,
             warned_rapl: false,
@@ -109,7 +109,7 @@ fn collect_rapl(collector: &mut PowerCollector, metrics: &MetricsRegistry) {
         collector.warned_rapl = true;
     }
 
-    for zone in collector.rapl_zones.iter_mut() {
+    for zone in &mut collector.rapl_zones {
         let Some(energy) = zone.read_energy() else {
             if !collector.warned_rapl {
                 warn!(
@@ -242,7 +242,7 @@ fn collect_node_power(collector: &mut PowerCollector, metrics: &MetricsRegistry)
         return;
     }
 
-    for candidate in collector.node_power_candidates.iter() {
+    for candidate in &collector.node_power_candidates {
         if let Ok(val) = fs::read_to_string(candidate) {
             if let Ok(microwatts) = val.trim().parse::<u64>() {
                 let watts = microwatts as f64 / 1_000_000.0;
@@ -282,7 +282,7 @@ fn collect_cpu_temps(collector: &mut PowerCollector, metrics: &MetricsRegistry) 
     let mut readings = Vec::new();
     for c in collector.sysinfo.components() {
         let name = c.label().to_string();
-        let temp = c.temperature() as f64;
+        let temp = f64::from(c.temperature());
         metrics
             .cpu_temperature_celsius
             .with_label_values(&[name.as_str()])

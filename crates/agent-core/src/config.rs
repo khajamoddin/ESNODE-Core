@@ -15,13 +15,14 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    pub fn as_tracing(&self) -> tracing::Level {
+    #[must_use]
+    pub const fn as_tracing(&self) -> tracing::Level {
         match self {
-            LogLevel::Error => tracing::Level::ERROR,
-            LogLevel::Warn => tracing::Level::WARN,
-            LogLevel::Info => tracing::Level::INFO,
-            LogLevel::Debug => tracing::Level::DEBUG,
-            LogLevel::Trace => tracing::Level::TRACE,
+            Self::Error => tracing::Level::ERROR,
+            Self::Warn => tracing::Level::WARN,
+            Self::Info => tracing::Level::INFO,
+            Self::Debug => tracing::Level::DEBUG,
+            Self::Trace => tracing::Level::TRACE,
         }
     }
 }
@@ -84,7 +85,7 @@ pub struct AgentConfig {
 
 impl Default for AgentConfig {
     fn default() -> Self {
-        AgentConfig {
+        Self {
             listen_address: "0.0.0.0:9100".to_string(),
             scrape_interval: Duration::from_secs(5),
             enable_cpu: true,
@@ -270,18 +271,18 @@ impl AgentConfig {
 
 fn default_local_tsdb_path() -> String {
     if let Ok(path) = std::env::var("XDG_DATA_HOME") {
-        format!("{}/esnode/tsdb", path)
+        format!("{path}/esnode/tsdb")
     } else if let Ok(home) = std::env::var("HOME") {
-        format!("{}/.local/share/esnode/tsdb", home)
+        format!("{home}/.local/share/esnode/tsdb")
     } else {
         "/var/lib/esnode/tsdb".to_string()
     }
 }
 
-fn default_local_tsdb_retention_hours() -> u64 {
+const fn default_local_tsdb_retention_hours() -> u64 {
     48
 }
 
-fn default_local_tsdb_max_disk_mb() -> u64 {
+const fn default_local_tsdb_max_disk_mb() -> u64 {
     2048
 }

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use sysinfo::{CpuExt, CpuRefreshKind, RefreshKind, System, SystemExt};
+use sysinfo::{CpuRefreshKind, RefreshKind, System, SystemExt};
 
 use crate::collectors::Collector;
 use crate::metrics::MetricsRegistry;
@@ -28,7 +28,7 @@ impl NumaCollector {
         // Keep CPU refresh data for per-core utilization.
         let system =
             System::new_with_specifics(RefreshKind::new().with_cpu(CpuRefreshKind::everything()));
-        NumaCollector { nodes, system }
+        Self { nodes, system }
     }
 }
 
@@ -40,7 +40,7 @@ impl Collector for NumaCollector {
 
     async fn collect(&mut self, metrics: &MetricsRegistry) -> anyhow::Result<()> {
         self.system.refresh_cpu();
-        for node in self.nodes.iter() {
+        for node in &self.nodes {
             let label = node.id.as_str();
             if let Some(meminfo) = read_meminfo(&node.meminfo_path) {
                 let total = meminfo.get("MemTotal").copied().unwrap_or(0) * 1024;
@@ -64,11 +64,11 @@ impl Collector for NumaCollector {
             let usages: Vec<f32> = node
                 .cpus
                 .iter()
-                .filter_map(|idx| self.system.cpus().get(*idx).map(|c| c.cpu_usage()))
+                .filter_map(|idx| self.system.cpus().get(*idx).map(sysinfo::CpuExt::cpu_usage))
                 .collect();
             if !usages.is_empty() {
                 let sum: f32 = usages.iter().copied().sum();
-                let avg = sum as f64 / usages.len() as f64;
+                let avg = f64::from(sum) / usages.len() as f64;
                 metrics
                     .numa_cpu_usage_percent
                     .with_label_values(&[label])

@@ -101,7 +101,7 @@ async fn events_handler(
     use tokio_stream::wrappers::IntervalStream;
 
     let interval = tokio::time::interval(std::time::Duration::from_secs(5));
-    let state_clone = state.status.clone();
+    let state_clone = state.status;
 
     let stream = IntervalStream::new(interval).map(move |_| {
         let snap = state_clone.snapshot();

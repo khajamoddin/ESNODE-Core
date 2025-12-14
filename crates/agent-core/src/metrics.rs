@@ -145,6 +145,7 @@ pub struct MetricsRegistry {
 }
 
 impl MetricsRegistry {
+    #[must_use]
     pub fn gather_families(&self) -> Vec<MetricFamily> {
         self.registry.gather()
     }
@@ -952,7 +953,7 @@ impl MetricsRegistry {
             "Application token generation rate (tokens/sec)",
         ))?;
 
-        let metrics = MetricsRegistry {
+        let metrics = Self {
             registry,
             cpu_load_avg_1m,
             cpu_load_avg_5m,
@@ -1001,6 +1002,9 @@ impl MetricsRegistry {
             network_degradation_retrans,
             swap_degradation_spike,
             degradation_score,
+            cpu_package_power_watts,
+            node_power_watts,
+            node_energy_joules_total,
             gpu_utilization_percent,
             gpu_memory_total_bytes,
             gpu_memory_used_bytes,
@@ -1018,8 +1022,8 @@ impl MetricsRegistry {
             gpu_retired_pages_total,
             gpu_last_xid_code,
             gpu_last_event_unix_ms,
-            gpu_xid_errors_total,
             gpu_energy_joules_total,
+            gpu_xid_errors_total,
             gpu_pcie_tx_bytes_total,
             gpu_pcie_rx_bytes_total,
             gpu_pcie_correctable_errors_total,
@@ -1030,11 +1034,6 @@ impl MetricsRegistry {
             gpu_nvswitch_errors_total,
             gpu_degradation_throttle,
             gpu_degradation_ecc,
-            agent_scrape_duration_seconds,
-            agent_errors_total,
-            cpu_package_power_watts,
-            node_power_watts,
-            node_energy_joules_total,
             gpu_fan_speed_percent,
             gpu_clock_sm_mhz,
             gpu_clock_mem_mhz,
@@ -1073,6 +1072,8 @@ impl MetricsRegistry {
             cpu_core_power_watts,
             pdu_outlet_power_watts,
             node_power_envelope_exceeded,
+            agent_scrape_duration_seconds,
+            agent_errors_total,
             agent_running,
             agent_start_time_seconds,
             agent_build_info,
@@ -1233,6 +1234,7 @@ impl MetricsRegistry {
         Ok(())
     }
 
+    #[must_use]
     pub fn gather(&self) -> Vec<MetricFamily> {
         self.registry.gather()
     }

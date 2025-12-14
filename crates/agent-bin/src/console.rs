@@ -82,7 +82,7 @@ impl AppState {
         config_path: PathBuf,
         config: agent_core::AgentConfig,
     ) -> Self {
-        AppState {
+        Self {
             screen: Screen::MainMenu,
             last_status: None,
             last_orch_metrics: None,
@@ -94,7 +94,7 @@ impl AppState {
             config: config.clone(),
             connect_active: ConnectField::Server,
             connect_server_input: config.managed_server.clone().unwrap_or_default(),
-            connect_token_input: config.managed_join_token.clone().unwrap_or_default(),
+            connect_token_input: config.managed_join_token.unwrap_or_default(),
         }
     }
 
@@ -267,8 +267,7 @@ fn render_main_menu(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         AgentMode::Standalone => "(not connected)".to_string(),
         AgentMode::Managed(meta) => meta
             .server
-            .as_ref()
-            .cloned()
+            .clone()
             .unwrap_or_else(|| "(unknown)".to_string()),
     };
     let text = vec![
@@ -276,12 +275,10 @@ fn render_main_menu(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Line::from("                        Estimatedstocks AB – ESNODE-Core                "),
         Line::from(""),
         Line::from(format!(
-            "   Core Mode  . . . . . . . . . . . . . . . :  {}",
-            mode_line
+            "   Core Mode  . . . . . . . . . . . . . . . :  {mode_line}"
         )),
         Line::from(format!(
-            "   Server (Pulse)  . . . . . . . . . . . .  :  {}",
-            server_line
+            "   Server (Pulse)  . . . . . . . . . . . .  :  {server_line}"
         )),
         Line::from(""),
         Line::from("   Select one of the following options and press Enter:"),
@@ -472,26 +469,24 @@ fn render_network_disk(frame: &mut ratatui::Frame, area: Rect, state: &AppState)
         .primary_nic
         .clone()
         .unwrap_or_else(|| "n/a".to_string());
-    let rx = status
-        .net_rx_bytes_per_sec
-        .map(|b| format!("{}/s", human_bytes(b as u64)))
-        .unwrap_or_else(|| "n/a".to_string());
-    let tx = status
-        .net_tx_bytes_per_sec
-        .map(|b| format!("{}/s", human_bytes(b as u64)))
-        .unwrap_or_else(|| "n/a".to_string());
+    let rx = status.net_rx_bytes_per_sec.map_or_else(
+        || "n/a".to_string(),
+        |b| format!("{}/s", human_bytes(b as u64)),
+    );
+    let tx = status.net_tx_bytes_per_sec.map_or_else(
+        || "n/a".to_string(),
+        |b| format!("{}/s", human_bytes(b as u64)),
+    );
     let drops = status
         .net_drops_per_sec
-        .map(|d| format!("{d:.1}/s"))
-        .unwrap_or_else(|| "0".to_string());
+        .map_or_else(|| "0".to_string(), |d| format!("{d:.1}/s"));
     let disk_used = match (status.disk_root_used_bytes, status.disk_root_total_bytes) {
         (Some(used), Some(total)) => format!("{} / {}", human_bytes(used), human_bytes(total)),
         _ => "n/a".to_string(),
     };
     let disk_io = status
         .disk_root_io_time_ms
-        .map(|v| format!("{v} ms"))
-        .unwrap_or_else(|| "n/a".to_string());
+        .map_or_else(|| "n/a".to_string(), |v| format!("{v} ms"));
     let degradation = format!(
         "Disk: {}   Net: {}   Swap: {}   Score: {}",
         if status.disk_degraded {
@@ -681,48 +676,38 @@ fn render_agent_status(frame: &mut ratatui::Frame, area: Rect, state: &AppState)
             state
                 .last_status
                 .as_ref()
-                .map(|s| if s.healthy { "YES" } else { "WARN" })
-                .unwrap_or("UNKNOWN")
+                .map_or("UNKNOWN", |s| if s.healthy { "YES" } else { "WARN" })
         )),
         Line::from(format!(
             "     Last scrape (unix ms) . . . . . . . . . . . . . :  {}",
             state
                 .last_status
-                .as_ref()
-                .map(|s| s.last_scrape_unix_ms.to_string())
-                .unwrap_or_else(|| "n/a".to_string())
+                .as_ref().map_or_else(|| "n/a".to_string(), |s| s.last_scrape_unix_ms.to_string())
         )),
         Line::from(format!(
             "     Node power (W) . . . . . . . . . . . . . . . . .:  {}",
             state
                 .last_status
                 .as_ref()
-                .and_then(|s| s.node_power_watts)
-                .map(|v| format!("{v:.1}"))
-                .unwrap_or_else(|| "n/a".to_string())
+                .and_then(|s| s.node_power_watts).map_or_else(|| "n/a".to_string(), |v| format!("{v:.1}"))
         )),
         Line::from(format!(
             "     Degradation flags . . . . . . . . . . . . . . . .:  disk={} net={} swap={} score={}",
             state
                 .last_status
                 .as_ref()
-                .map(|s| if s.disk_degraded { "DEG" } else { "OK" })
-                .unwrap_or("n/a"),
+                .map_or("n/a", |s| if s.disk_degraded { "DEG" } else { "OK" }),
             state
                 .last_status
                 .as_ref()
-                .map(|s| if s.network_degraded { "DEG" } else { "OK" })
-                .unwrap_or("n/a"),
+                .map_or("n/a", |s| if s.network_degraded { "DEG" } else { "OK" }),
             state
                 .last_status
                 .as_ref()
-                .map(|s| if s.swap_degraded { "DEG" } else { "OK" })
-                .unwrap_or("n/a"),
+                .map_or("n/a", |s| if s.swap_degraded { "DEG" } else { "OK" }),
             state
                 .last_status
-                .as_ref()
-                .map(|s| s.degradation_score.to_string())
-                .unwrap_or_else(|| "n/a".to_string())
+                .as_ref().map_or_else(|| "n/a".to_string(), |s| s.degradation_score.to_string())
         )),
         Line::from(""),
         Line::from("   Recent Errors (last 10):"),
@@ -777,8 +762,8 @@ fn render_connect_server(frame: &mut ratatui::Frame, area: Rect, state: &AppStat
         Line::from("   This node is currently running in STANDALONE mode."),
         Line::from("   To enroll it into a managed cluster, enter the ESNODE-Pulse details."),
         Line::from(""),
-        Line::from(server_line.clone()),
-        Line::from(token_line.clone()),
+        Line::from(server_line),
+        Line::from(token_line),
         Line::from(""),
         Line::from("   After connection:"),
         Line::from("     - Local tuning via this console will be disabled."),
@@ -832,11 +817,11 @@ fn render_orchestrator(frame: &mut ratatui::Frame, area: Rect, state: &AppState)
     }
     let metrics = state.last_orch_metrics.as_ref().unwrap();
     let orch_cfg = state.config.orchestrator.as_ref();
-    let auth_line = orch_cfg
-        .and_then(|c| c.token.as_ref())
-        .map(|_| "Bearer token REQUIRED".to_string())
-        .unwrap_or_else(|| "No token (local-only)".to_string());
-    let exposure = if orch_cfg.map(|c| c.allow_public).unwrap_or(false) {
+    let auth_line = orch_cfg.and_then(|c| c.token.as_ref()).map_or_else(
+        || "No token (local-only)".to_string(),
+        |_| "Bearer token REQUIRED".to_string(),
+    );
+    let exposure = if orch_cfg.is_some_and(|c| c.allow_public) {
         "Public listener allowed (ensure token set)".to_string()
     } else {
         "Loopback-only (default safe mode)".to_string()
@@ -899,8 +884,8 @@ fn handle_key(code: KeyCode, state: &mut AppState) -> bool {
     if let AgentMode::Managed(_) = state.mode {
         if state.screen != Screen::ConnectServer {
             match code {
-                KeyCode::Esc | KeyCode::F(3) | KeyCode::F(12) | KeyCode::Char('q') => {
-                    state.should_exit = true
+                KeyCode::Esc | KeyCode::F(3 | 12) | KeyCode::Char('q') => {
+                    state.should_exit = true;
                 }
                 KeyCode::F(5) => return true,
                 _ => {}
@@ -1274,7 +1259,7 @@ mod tests {
         assert_eq!(summary.cores, "16");
         assert_eq!(summary.cpu_util, "55 %");
         assert!(summary.mem_total.contains("GiB"));
-        assert!(summary.disk_used.contains("/"));
+        assert!(summary.disk_used.contains('/'));
         assert!(summary.net_rx.contains("eth0"));
         assert_eq!(summary.avg_gpu_util, "75 %");
         assert_eq!(summary.node_power, "220.0 W");
@@ -1363,14 +1348,14 @@ mod tests {
 fn render_managed(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
     let meta = match &state.mode {
         AgentMode::Managed(m) => Some(m),
-        _ => None,
+        AgentMode::Standalone => None,
     };
     let lines = vec![
         Line::from("                     ESNODE-AGENT – MANAGED BY ESNODE-SERVER             N01"),
         Line::from(""),
         Line::from(format!(
             "   Node Mode  . . . . . . . . . . . . . . . :  {}",
-            meta.map(|_| "MANAGED").unwrap_or("UNKNOWN")
+            meta.map_or("UNKNOWN", |_| "MANAGED")
         )),
         Line::from(format!(
             "   Node ID  . . . . . . . . . . . . . . . . :  {}",
@@ -1392,13 +1377,11 @@ fn render_managed(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Line::from(format!(
             "     Last contact (UTC) . . . . . . . . . . :  {}",
             meta.and_then(|m| m.last_contact_unix_ms)
-                .map(|ms| format!("{}", ms))
-                .unwrap_or_else(|| "unknown".to_string())
+                .map_or_else(|| "unknown".to_string(), |ms| format!("{ms}"))
         )),
         Line::from(format!(
             "     Connection state  . . . . . . . . . .  :  {}",
-            meta.map(|m| m.state.clone())
-                .unwrap_or_else(|| "DEGRADED".to_string())
+            meta.map_or_else(|| "DEGRADED".to_string(), |m| m.state.clone())
         )),
         Line::from(""),
         Line::from("   Local Monitoring:"),
@@ -1444,22 +1427,16 @@ fn build_gpu_table(status: Option<&StatusSnapshot>) -> Vec<Line<'static>> {
                     " {idx:<4}{user:<6}{util:<6}{mem:<23}{power:<10}{temp:<8}{throt:<8}{ecc:<5}{notes}",
                     user = gpu_owner(gpu),
                     util = gpu
-                        .util_percent
-                        .map(|v| format!("{v:>5.1}"))
-                        .unwrap_or_else(|| "  n/a".to_string()),
+                        .util_percent.map_or_else(|| "  n/a".to_string(), |v| format!("{v:>5.1}")),
                     mem = format!(
                         "{} / {}",
                         format_bytes(gpu.memory_used_bytes),
                         format_bytes(gpu.memory_total_bytes)
                     ),
                     power = gpu
-                        .power_watts
-                        .map(|v| format!("{v:<9.0}"))
-                        .unwrap_or_else(|| "n/a      ".to_string()),
+                        .power_watts.map_or_else(|| "n/a      ".to_string(), |v| format!("{v:<9.0}")),
                     temp = gpu
-                        .temperature_celsius
-                        .map(|v| format!("{v:<7.0}"))
-                        .unwrap_or_else(|| "n/a    ".to_string()),
+                        .temperature_celsius.map_or_else(|| "n/a    ".to_string(), |v| format!("{v:<7.0}")),
                     throt = format!(
                         "{:.1}",
                         if gpu.power_throttle || gpu.thermal_throttle {
@@ -1503,7 +1480,8 @@ fn build_gpu_table(status: Option<&StatusSnapshot>) -> Vec<Line<'static>> {
                             if tree.devices.len() > 4 {
                                 descs.push(format!("+{} more", tree.devices.len() - 4));
                             }
-                            mig_line.push_str(&format!(" | devices: {}", descs.join(", ")));
+                            use std::fmt::Write;
+                            let _ = write!(&mut mig_line, " | devices: {}", descs.join(", "));
                         }
                         lines.push(Line::from(format!("      {mig_line}")));
                     }
@@ -1523,8 +1501,7 @@ fn build_gpu_table(status: Option<&StatusSnapshot>) -> Vec<Line<'static>> {
     lines.push(Line::from(""));
     let node_power = status
         .and_then(|s| s.node_power_watts)
-        .map(|v| format!("{:.1} kW", v / 1000.0))
-        .unwrap_or_else(|| "n/a".to_string());
+        .map_or_else(|| "n/a".to_string(), |v| format!("{:.1} kW", v / 1000.0));
     lines.push(Line::from(format!(
         " Node Power: {node_power}   Tokens/Watt (last 5m): n/a    Energy/J (last 24h):  n/a",
     )));
@@ -1572,8 +1549,7 @@ fn format_duration(secs: u64) -> String {
 
 fn gpu_owner(gpu: &GpuStatus) -> String {
     gpu.fan_percent
-        .map(|v| format!("{v:>5.1}"))
-        .unwrap_or_else(|| "svc".to_string())
+        .map_or_else(|| "svc".to_string(), |v| format!("{v:>5.1}"))
 }
 
 fn gpu_health_line(gpu: &GpuStatus) -> String {
@@ -1586,22 +1562,22 @@ fn gpu_health_line(gpu: &GpuStatus) -> String {
             parts.push(format!("throttle: {}", h.throttle_reasons.join(",")));
         }
         if let Some(mode) = h.ecc_mode.as_ref() {
-            parts.push(format!("ECC {}", mode));
+            parts.push(format!("ECC {mode}"));
         }
         if let Some(r) = h.retired_pages {
-            parts.push(format!("retired_pages {}", r));
+            parts.push(format!("retired_pages {r}"));
         }
         if let Some(xid) = h.last_xid {
             parts.push(format!("last_xid {xid}"));
         }
         if let Some(enc) = h.encoder_util_percent {
-            parts.push(format!("enc {:.0}%", enc));
+            parts.push(format!("enc {enc:.0}%"));
         }
         if let Some(dec) = h.decoder_util_percent {
-            parts.push(format!("dec {:.0}%", dec));
+            parts.push(format!("dec {dec:.0}%"));
         }
         if let Some(cp) = h.copy_util_percent {
-            parts.push(format!("copy {:.0}%", cp));
+            parts.push(format!("copy {cp:.0}%"));
         }
         if let Some(bar1) = h.bar1_used_bytes {
             let total = h.bar1_total_bytes.unwrap_or(0);
@@ -1656,7 +1632,7 @@ struct NodeSummary {
 
 impl NodeSummary {
     fn from_status(state: &AppState) -> Self {
-        let mut summary = NodeSummary {
+        let mut summary = Self {
             node_name: "gpu-node-01".to_string(),
             region: "local".to_string(),
             uptime: "n/a".to_string(),
@@ -1695,10 +1671,10 @@ impl NodeSummary {
         if let Some(status) = state.last_status.as_ref() {
             summary.load_1 = format!("{:.1}", status.load_avg_1m);
             if let Some(l5) = status.load_avg_5m {
-                summary.load_5 = format!("{:.1}", l5);
+                summary.load_5 = format!("{l5:.1}");
             }
             if let Some(l15) = status.load_avg_15m {
-                summary.load_15 = format!("{:.1}", l15);
+                summary.load_15 = format!("{l15:.1}");
             }
             if let Some(cores) = status.cpu_cores {
                 summary.cores = format!("{cores}");
@@ -1730,24 +1706,23 @@ impl NodeSummary {
                 summary.disk_latency = format!("{io_ms} ms");
             }
             if let Some(nic) = status.primary_nic.clone() {
-                let rx = status
-                    .net_rx_bytes_per_sec
-                    .map(|b| format!("{}/s", human_bytes(b as u64)))
-                    .unwrap_or_else(|| "n/a".to_string());
-                let tx = status
-                    .net_tx_bytes_per_sec
-                    .map(|b| format!("{}/s", human_bytes(b as u64)))
-                    .unwrap_or_else(|| "n/a".to_string());
+                let rx = status.net_rx_bytes_per_sec.map_or_else(
+                    || "n/a".to_string(),
+                    |b| format!("{}/s", human_bytes(b as u64)),
+                );
+                let tx = status.net_tx_bytes_per_sec.map_or_else(
+                    || "n/a".to_string(),
+                    |b| format!("{}/s", human_bytes(b as u64)),
+                );
                 let drops = status
                     .net_drops_per_sec
-                    .map(|d| format!("{:.1}", d))
-                    .unwrap_or_else(|| "0".to_string());
+                    .map_or_else(|| "0".to_string(), |d| format!("{d:.1}"));
                 summary.net_rx = format!("{rx} ({nic})");
                 summary.net_tx = tx;
                 summary.net_drop = drops;
             }
             if let Some(power) = status.node_power_watts {
-                summary.node_power = format!("{:.1} W", power);
+                summary.node_power = format!("{power:.1} W");
             } else {
                 let cpu_pkg_avg: Option<f64> = {
                     let vals: Vec<f64> = status
@@ -1782,7 +1757,7 @@ impl NodeSummary {
                     _ => None,
                 };
                 if let Some(v) = approx {
-                    summary.node_power = format!("~{:.1} W", v);
+                    summary.node_power = format!("~{v:.1} W");
                 }
             }
 
@@ -1790,10 +1765,10 @@ impl NodeSummary {
                 // We don't have a field for raw tokens/sec in NodeSummary yet,
                 // but we use it for efficiency.
                 if let Some(tpw) = status.app_tokens_per_watt {
-                    summary.tokens_per_watt = format!("{:.2}", tpw);
+                    summary.tokens_per_watt = format!("{tpw:.2}");
                     // Approximate Joule calc (Watts * 1s = Joules for that second)
                     // So Tokens/Joule is essentially same as Tokens/Watt if considering rate per second.
-                    summary.tokens_per_joule = format!("{:.2}", tpw);
+                    summary.tokens_per_joule = format!("{tpw:.2}");
                 }
             }
 
@@ -1801,7 +1776,7 @@ impl NodeSummary {
                 let mut inlet = None;
                 let mut exhaust = None;
                 let mut hotspot = None;
-                for t in status.cpu_temperatures.iter() {
+                for t in &status.cpu_temperatures {
                     let name = t.sensor.to_lowercase();
                     if inlet.is_none() && (name.contains("inlet") || name.contains("ambient")) {
                         inlet = Some(t.celsius);
@@ -1815,13 +1790,13 @@ impl NodeSummary {
                     });
                 }
                 if let Some(v) = inlet {
-                    summary.therm_inlet = format!("{:.0} C", v);
+                    summary.therm_inlet = format!("{v:.0} C");
                 }
                 if let Some(v) = exhaust {
-                    summary.therm_exhaust = format!("{:.0} C", v);
+                    summary.therm_exhaust = format!("{v:.0} C");
                 }
                 if let Some(v) = hotspot {
-                    summary.therm_hotspot = format!("{:.0} C", v);
+                    summary.therm_hotspot = format!("{v:.0} C");
                 }
             }
             if !status.gpus.is_empty() {
@@ -1882,8 +1857,11 @@ struct MetricToggleState {
 }
 
 impl MetricToggleState {
-    fn from_config(config: &agent_core::AgentConfig, status: Option<&StatusSnapshot>) -> Self {
-        let mut toggles = MetricToggleState {
+    const fn from_config(
+        config: &agent_core::AgentConfig,
+        status: Option<&StatusSnapshot>,
+    ) -> Self {
+        let mut toggles = Self {
             host: if config.enable_cpu
                 && config.enable_memory
                 && config.enable_disk
