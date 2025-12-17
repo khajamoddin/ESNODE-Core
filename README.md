@@ -128,6 +128,18 @@ Community & policies:
 - Local HTTP defaults avoid privileged paths; adjust in `crates/agent-core/src/config.rs` if changing defaults.
 
 ## Install packages (Agent – public)
+Fastest path (recommended):
+```bash
+curl -fsSL https://esnode.co/install.sh | sh
+```
+
+Notes:
+- Installs the `esnode-core` binary under `/usr/local/bin` and (on Linux) enables a `systemd` service with a default `/etc/esnode/esnode.toml`.
+- To pin a version or avoid systemd setup, pass args via `sh -s --`:
+  ```bash
+  curl -fsSL https://esnode.co/install.sh | sh -s -- --version 0.1.0 --no-service
+  ```
+
 Example commands (adjust version/OS paths):
 - Ubuntu/Debian (`.deb`):
   ```bash
