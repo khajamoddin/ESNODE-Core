@@ -123,8 +123,8 @@ case "$ARCH" in
 esac
 
 resolve_latest_version() {
-  # Prefer esnode.co if a simple version marker is published.
-  v=$(fetch_text "${BASE_URL}/esnode-core/latest.txt" 2>/dev/null || true)
+  # Fetch latest version from ESNODE-Core repository (raw).
+  v=$(fetch_text "https://raw.githubusercontent.com/ESNODE/ESNODE-Core/main/public/latest.txt" 2>/dev/null || true)
   if [ -n "${v}" ]; then
     printf '%s' "$v" | tr -d '\r\n' | sed 's/^v//'
     return 0
