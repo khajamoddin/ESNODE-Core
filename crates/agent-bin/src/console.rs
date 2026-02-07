@@ -196,7 +196,7 @@ fn style_header(state: &AppState) -> Style {
         Style::default().add_modifier(Modifier::BOLD)
     } else {
         Style::default()
-            .bg(Color::Blue)
+            .bg(Color::Rgb(26, 35, 50)) // Dark navy matching brand
             .fg(Color::White)
             .add_modifier(Modifier::BOLD)
     }
@@ -206,7 +206,9 @@ fn style_sidebar(state: &AppState) -> Style {
     if state.no_color {
         Style::default()
     } else {
-        Style::default().bg(Color::Black).fg(Color::Gray)
+        Style::default()
+            .bg(Color::Rgb(20, 27, 40)) // Slightly darker navy
+            .fg(Color::Rgb(156, 163, 175)) // Light gray text
     }
 }
 
@@ -215,8 +217,8 @@ fn style_sidebar_active(state: &AppState) -> Style {
         Style::default().add_modifier(Modifier::REVERSED)
     } else {
         Style::default()
-            .bg(Color::DarkGray)
-            .fg(Color::Cyan)
+            .bg(Color::Rgb(37, 99, 235)) // Bright blue accent
+            .fg(Color::White)
             .add_modifier(Modifier::BOLD)
     }
 }
@@ -233,7 +235,7 @@ fn style_label(state: &AppState) -> Style {
     if state.no_color {
         Style::default()
     } else {
-        Style::default().fg(Color::Cyan)
+        Style::default().fg(Color::Rgb(100, 181, 246)) // Light blue
     }
 }
 
@@ -241,7 +243,7 @@ fn style_green(state: &AppState) -> Style {
     if state.no_color {
         Style::default()
     } else {
-        Style::default().fg(Color::Green)
+        Style::default().fg(Color::Rgb(76, 175, 80)) // Material green
     }
 }
 
@@ -249,7 +251,7 @@ fn style_yellow(state: &AppState) -> Style {
     if state.no_color {
         Style::default()
     } else {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(Color::Rgb(255, 193, 7)) // Amber/orange
     }
 }
 
@@ -257,7 +259,7 @@ fn style_red(state: &AppState) -> Style {
     if state.no_color {
         Style::default()
     } else {
-        Style::default().fg(Color::Red)
+        Style::default().fg(Color::Rgb(244, 67, 54)) // Material red
     }
 }
 
@@ -280,9 +282,9 @@ fn render(frame: &mut ratatui::Frame, state: &AppState) {
 
 fn render_header(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
     let status_text = if state.last_status.is_some() {
-        "ONLINE"
+        "● ONLINE"
     } else {
-        "CONNECTING..."
+        "● CONNECTING..."
     };
     let status_style = if state.last_status.is_some() {
         style_green(state)
@@ -290,26 +292,45 @@ fn render_header(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         style_yellow(state)
     };
 
-    // Header content
+    // ESNODE asterisk logo in ASCII (simplified star symbol)
+    let logo = if state.no_color {
+        "*"
+    } else {
+        "✱"
+    };
+
+    // Header content with new branding
     let header_text = Line::from(vec![
         Span::styled(
-            " ESNODE ",
-            Style::default()
-                .bg(Color::White)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
+            format!(" {} ", logo),
+            if state.no_color {
+                Style::default().add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(Color::Rgb(255, 193, 7)) // Orange/amber accent
+                    .add_modifier(Modifier::BOLD)
+            },
         ),
-        Span::raw(" | "),
         Span::styled(
-            "Estimatedstocks AB",
-            Style::default().add_modifier(Modifier::BOLD),
+            "ESNODE",
+            if state.no_color {
+                Style::default().add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            },
         ),
-        Span::raw(" | "),
+        Span::raw("  "),
         Span::styled(
-            format!("Managed AI Infrastructure"),
-            Style::default().fg(Color::LightCyan),
+            "Power-Aware AI Infrastructure",
+            if state.no_color {
+                Style::default()
+            } else {
+                Style::default().fg(Color::Rgb(100, 181, 246)) // Light blue
+            },
         ),
-        Span::raw("        Status: "),
+        Span::raw("                    "),
         Span::styled(status_text, status_style),
     ]);
 

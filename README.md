@@ -1,8 +1,51 @@
 # ESNODE | Source Available BUSL-1.1 | Copyright (c) 2024 Estimatedstocks AB
 
-# ESNODE-Core
+<div align="center">
+  <img src="docs/images/esnode-logo-dark.png" alt="ESNODE - Power-Aware AI Infrastructure" width="600"/>
+  
+  <h3>Power-Aware AI Infrastructure Observability</h3>
+  
+  [![License](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
+  [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/ESNODE/ESNODE-Core)
+  [![Version](https://img.shields.io/badge/version-0.2.0-orange)](CHANGELOG.md)
+  
+</div>
 
-![ESNODE-Core TUI Home Screen](docs/images/esnode-tui-home.png)
+---
+
+## 🚀 Modern TUI Dashboard
+
+ESNODE-Core features a professional, cloud-console-grade Terminal User Interface for real-time infrastructure monitoring:
+
+```
+ ✱ ESNODE  Power-Aware AI Infrastructure                    ● ONLINE
+───────────────────────────────────────────────────────────────────────
+ Navigation             │
+▶ Overview              │   [CPU, Memory, Load Averages & Network Stats]
+  GPU & Power           │
+  Network & Disk        │
+  Efficiency & MCP      │
+  Orchestrator          │
+  Metrics Profiles      │
+  Agent Status          │
+           F5: Refresh |  Arrow Keys: Navigate |  Q/F3: Quit
+```
+
+**Key Features:**
+- 🎨 Enterprise-grade dark navy theme
+- 📊 Real-time gauges, tables, and status indicators
+- ⌨️ Intuitive keyboard navigation
+- 🎯 Color-coded health warnings (green/amber/red)
+- 📡 Auto-refresh every 5 seconds
+
+**Launch the TUI:**
+```bash
+./esnode-core cli
+```
+
+---
+
+# ESNODE-Core
 
 This repository contains the source, build tooling, and documentation for the ESNODE-Core Agent.
 ## Supported server OS targets (AI infra focused)
