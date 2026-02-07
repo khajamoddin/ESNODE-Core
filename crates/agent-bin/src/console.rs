@@ -8,7 +8,7 @@ use std::{
 
 use agent_core::state::{GpuStatus, StatusSnapshot};
 use anyhow::{Context, Result};
-use chrono::Utc;
+
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind},
@@ -35,66 +35,37 @@ pub enum Screen {
     Efficiency,
     MetricsProfiles,
     AgentStatus,
-    ConnectServer,
     Orchestrator,
 }
 
-#[derive(Clone, Debug)]
-pub struct ManagedMetadata {
-    pub server: Option<String>,
-    pub cluster_id: Option<String>,
-    pub node_id: Option<String>,
-    pub last_contact_unix_ms: Option<u64>,
-    pub state: String,
-}
 
-#[derive(Clone, Debug)]
-pub enum AgentMode {
-    Standalone,
-    Managed(ManagedMetadata),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ConnectField {
-    Server,
-    Token,
-}
 
 struct AppState {
     screen: Screen,
     last_status: Option<StatusSnapshot>,
-    last_orch_metrics: Option<esnode_orchestrator::PubMetrics>,
     message: Option<String>,
     no_color: bool,
+
     should_exit: bool,
-    mode: AgentMode,
     config_path: PathBuf,
     config: agent_core::AgentConfig,
-    connect_active: ConnectField,
-    connect_server_input: String,
-    connect_token_input: String,
 }
 
 impl AppState {
     fn new(
         no_color: bool,
-        mode: AgentMode,
         config_path: PathBuf,
         config: agent_core::AgentConfig,
     ) -> Self {
         Self {
             screen: Screen::MainMenu,
             last_status: None,
-            last_orch_metrics: None,
             message: None,
             no_color,
+
             should_exit: false,
-            mode,
             config_path,
             config: config.clone(),
-            connect_active: ConnectField::Server,
-            connect_server_input: config.managed_server.clone().unwrap_or_default(),
-            connect_token_input: config.managed_join_token.unwrap_or_default(),
         }
     }
 
@@ -119,7 +90,6 @@ impl AppState {
 pub fn run_console(
     client: &AgentClient,
     no_color: bool,
-    mode: AgentMode,
     config_path: PathBuf,
     config: agent_core::AgentConfig,
 ) -> Result<()> {
@@ -129,7 +99,7 @@ pub fn run_console(
     terminal.clear()?;
     terminal.show_cursor()?;
 
-    let mut state = AppState::new(no_color, mode, config_path, config);
+    let mut state = AppState::new(no_color, config_path, config);
     refresh_status(&mut state, client);
     let mut last_refresh = Instant::now();
 
@@ -173,16 +143,14 @@ pub fn run_console(
                         }
                         KeyCode::Char('6') if state.screen == Screen::MainMenu => {
                             state.set_screen(Screen::AgentStatus);
+                            state.set_screen(Screen::AgentStatus);
                             refresh_now = true;
                         }
                         KeyCode::Char('7') if state.screen == Screen::MainMenu => {
-                            state.set_screen(Screen::ConnectServer);
-                            refresh_now = true;
-                        }
-                        KeyCode::Char('8') if state.screen == Screen::MainMenu => {
                             state.set_screen(Screen::Orchestrator);
                             refresh_now = true;
                         }
+
                         _ => {}
                     }
                     if refresh_now {
@@ -216,12 +184,6 @@ fn refresh_status(state: &mut AppState, client: &AgentClient) {
             state.set_status(None);
         }
     }
-    // Also fetch orchestrator metrics (best effort)
-    if let Ok(orch) = client.fetch_orchestrator_metrics() {
-        state.last_orch_metrics = Some(orch);
-    } else {
-        state.last_orch_metrics = None;
-    }
 }
 
 fn prepare_terminal() -> Result<Stdout> {
@@ -241,10 +203,6 @@ fn render(frame: &mut ratatui::Frame, state: &AppState) {
     // Use full terminal area instead of a fixed 80x24 window so the console scales
     // with the current terminal size.
     let area = frame.size();
-    if let AgentMode::Managed(_) = state.mode {
-        render_managed(frame, area, state);
-        return;
-    }
     match state.screen {
         Screen::MainMenu => render_main_menu(frame, area, state),
         Screen::NodeOverview => render_node_overview(frame, area, state),
@@ -252,33 +210,20 @@ fn render(frame: &mut ratatui::Frame, state: &AppState) {
         Screen::NetworkDisk => render_network_disk(frame, area, state),
         Screen::Efficiency => render_efficiency(frame, area, state),
         Screen::MetricsProfiles => render_metric_profiles(frame, area, state),
+
         Screen::AgentStatus => render_agent_status(frame, area, state),
-        Screen::ConnectServer => render_connect_server(frame, area, state),
         Screen::Orchestrator => render_orchestrator(frame, area, state),
     }
 }
 
 fn render_main_menu(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
-    let mode_line = match &state.mode {
-        AgentMode::Standalone => "STANDALONE".to_string(),
-        AgentMode::Managed(_) => "MANAGED".to_string(),
-    };
-    let server_line = match &state.mode {
-        AgentMode::Standalone => "(not connected)".to_string(),
-        AgentMode::Managed(meta) => meta
-            .server
-            .clone()
-            .unwrap_or_else(|| "(unknown)".to_string()),
-    };
+    let mode_line = "STANDALONE".to_string();
     let text = vec![
         Line::from("                          ESNODE – CORE CONSOLE                         N01"),
         Line::from("                        Estimatedstocks AB – ESNODE-Core                "),
         Line::from(""),
         Line::from(format!(
             "   Core Mode  . . . . . . . . . . . . . . . :  {mode_line}"
-        )),
-        Line::from(format!(
-            "   Server (Pulse)  . . . . . . . . . . . .  :  {server_line}"
         )),
         Line::from(""),
         Line::from("   Select one of the following options and press Enter:"),
@@ -288,9 +233,9 @@ fn render_main_menu(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Line::from("     3. Network & Disk           (I/O, bandwidth, latency)"),
         Line::from("     4. Efficiency & MCP Signals (tokens-per-watt, routing scores)"),
         Line::from("     5. Metrics Profiles         (enable/disable metric sets)"),
+
         Line::from("     6. AgentStatus & Logs      (health, errors, config)"),
-        Line::from("     7. Connect to ESNODE-Pulse (attach this ESNODE to a cluster)"),
-        Line::from("     8. ESNODE Orchestrator      (Autonomous features, tasks, devices)"),
+        Line::from("     7. Orchestrator Status      (tasks, peers, autonomy)"),
         Line::from(""),
         Line::from("     Selection . . . . . . . . . . . . . . . . . .  __"),
         Line::from(""),
@@ -751,138 +696,13 @@ fn render_agent_status(frame: &mut ratatui::Frame, area: Rect, state: &AppState)
     frame.render_widget(paragraph, area);
 }
 
-fn render_connect_server(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
-    let server_prefix = "   Server address (host:port)  . . . . . . . . . . . . .  ";
-    let token_prefix = "   Join token (optional)  . . . . . . . . . . . . . . . .  ";
-    let server_line = format!("{server_prefix}{:<30}", state.connect_server_input);
-    let token_line = format!("{token_prefix}{:<30}", state.connect_token_input);
-    let lines = vec![
-        Line::from("                    ESNODE – CONNECT TO ESNODE-SERVER                    N02"),
-        Line::from(""),
-        Line::from("   This node is currently running in STANDALONE mode."),
-        Line::from("   To enroll it into a managed cluster, enter the ESNODE-Pulse details."),
-        Line::from(""),
-        Line::from(server_line),
-        Line::from(token_line),
-        Line::from(""),
-        Line::from("   After connection:"),
-        Line::from("     - Local tuning via this console will be disabled."),
-        Line::from("     - Monitoring, alerts and throttling will be controlled centrally"),
-        Line::from("       from the ESNODE-Pulse."),
-        Line::from("     - Local /metrics endpoint and Prometheus output remain active."),
-        Line::from(""),
-        Line::from("   Option:"),
-        Line::from("     1=Connect Now    2=Test Connection    3=Cancel"),
-        Line::from(""),
-        Line::from("   Selection . . . . . . . . . . . . . . . . . . . . . __"),
-        Line::from(""),
-        Line::from(
-            "                                                                                 ",
-        ),
-        Line::from(" F3=Exit   F5=Refresh   F10=Help   F12=Back"),
-    ];
-    let mut block = Block::default().borders(Borders::ALL);
-    if !state.no_color {
-        block = block.border_style(primary_style(state));
-    }
-    let paragraph = Paragraph::new(lines)
-        .style(primary_style(state))
-        .block(block)
-        .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
 
-    // Place cursor on active input
-    let (cursor_row, cursor_col) = match state.connect_active {
-        ConnectField::Server => (
-            area.y + 5,
-            area.x + server_prefix.len() as u16 + state.connect_server_input.len() as u16,
-        ),
-        ConnectField::Token => (
-            area.y + 6,
-            area.x + token_prefix.len() as u16 + state.connect_token_input.len() as u16,
-        ),
-    };
-    frame.set_cursor(cursor_col, cursor_row);
-}
 
-fn render_orchestrator(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
-    if state.last_orch_metrics.is_none() {
-        render_placeholder(
-            frame,
-            area,
-            state,
-            "Orchestrator disabled or unreachable (Enable with --enable-orchestrator)",
-        );
-        return;
-    }
-    let metrics = state.last_orch_metrics.as_ref().unwrap();
-    let orch_cfg = state.config.orchestrator.as_ref();
-    let auth_line = orch_cfg.and_then(|c| c.token.as_ref()).map_or_else(
-        || "No token (local-only)".to_string(),
-        |_| "Bearer token REQUIRED".to_string(),
-    );
-    let exposure = if orch_cfg.is_some_and(|c| c.allow_public) {
-        "Public listener allowed (ensure token set)".to_string()
-    } else {
-        "Loopback-only (default safe mode)".to_string()
-    };
-    let mut lines = vec![
-        Line::from("                       ESNODE – ORCHESTRATOR STATUS                     N01"),
-        Line::from(""),
-        Line::from("   Status:"),
-        Line::from("     Active . . . . . . . . . . . . . . . . . . . . . :  YES"),
-        Line::from(format!(
-            "     Managed Devices  . . . . . . . . . . . . . . . . :  {}",
-            metrics.device_count
-        )),
-        Line::from(format!(
-            "     Pending Tasks  . . . . . . . . . . . . . . . . . :  {}",
-            metrics.pending_tasks
-        )),
-        Line::from(format!(
-            "     Auth / Exposure  . . . . . . . . . . . . . . . . :  {auth_line}"
-        )),
-        Line::from(format!(
-            "     Binding  . . . . . . . . . . . . . . . . . . . . :  {exposure}"
-        )),
-        Line::from(""),
-        Line::from("   Devices:"),
-    ];
 
-    if metrics.devices.is_empty() {
-        lines.push(Line::from("     (no devices registered)"));
-    } else {
-        for (i, dev) in metrics.devices.iter().enumerate() {
-            lines.push(Line::from(format!(
-                "     {}. {} (Mem: {:.1} GB, Load: {:.1}%)",
-                i + 1,
-                dev.id,
-                dev.mem_gb,
-                dev.current_load * 100.0
-            )));
-        }
-    }
 
-    lines.extend_from_slice(&[
-        Line::from(""),
-        Line::from(""),
-        Line::from(" F3=Exit   F5=Refresh   F12=Back"),
-    ]);
-
-    let mut block = Block::default().borders(Borders::ALL);
-    if !state.no_color {
-        block = block.border_style(primary_style(state));
-    }
-    let paragraph = Paragraph::new(lines)
-        .style(primary_style(state))
-        .block(block)
-        .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
-}
 
 fn handle_key(code: KeyCode, state: &mut AppState) -> bool {
-    if let AgentMode::Managed(_) = state.mode {
-        if state.screen != Screen::ConnectServer {
+
             match code {
                 KeyCode::Esc | KeyCode::F(3 | 12) | KeyCode::Char('q') => {
                     state.should_exit = true;
@@ -890,14 +710,8 @@ fn handle_key(code: KeyCode, state: &mut AppState) -> bool {
                 KeyCode::F(5) => return true,
                 _ => {}
             }
-            return false;
-        }
-    }
-    if state.screen == Screen::ConnectServer {
-        if let Some(refresh) = handle_connect_key(code, state) {
-            return refresh;
-        }
-    }
+
+
     match code {
         KeyCode::Esc | KeyCode::F(12) => state.back(),
         KeyCode::F(3) | KeyCode::Char('q') => state.should_exit = true,
@@ -1056,79 +870,7 @@ fn persist_console_config(path: &PathBuf, config: &agent_core::AgentConfig) -> R
     Ok(())
 }
 
-fn handle_connect_key(code: KeyCode, state: &mut AppState) -> Option<bool> {
-    match code {
-        KeyCode::Enter => {
-            if state.connect_server_input.trim().is_empty() {
-                state.message =
-                    Some("Enter server address (host:port) before connecting".to_string());
-            } else {
-                perform_connect(state);
-            }
-            return Some(false);
-        }
-        KeyCode::Tab => {
-            state.connect_active = match state.connect_active {
-                ConnectField::Server => ConnectField::Token,
-                ConnectField::Token => ConnectField::Server,
-            };
-            return Some(false);
-        }
-        KeyCode::Backspace => {
-            match state.connect_active {
-                ConnectField::Server => {
-                    state.connect_server_input.pop();
-                }
-                ConnectField::Token => {
-                    state.connect_token_input.pop();
-                }
-            }
-            return Some(false);
-        }
-        KeyCode::Char(c) => {
-            // Basic printable guard; allow spaces as part of token.
-            if !c.is_control() {
-                match state.connect_active {
-                    ConnectField::Server => state.connect_server_input.push(c),
-                    ConnectField::Token => state.connect_token_input.push(c),
-                }
-            }
-            return Some(false);
-        }
-        _ => {}
-    }
-    None
-}
 
-fn perform_connect(state: &mut AppState) {
-    let server = state.connect_server_input.trim().to_string();
-    let token = state.connect_token_input.trim().to_string();
-
-    state.config.managed_server = Some(server.clone());
-    state.config.managed_join_token = if token.is_empty() {
-        None
-    } else {
-        Some(token.clone())
-    };
-    if state.config.managed_node_id.is_none() {
-        state.config.managed_node_id = Some("local-node".to_string());
-    }
-    if state.config.managed_cluster_id.is_none() {
-        state.config.managed_cluster_id = Some("unknown-cluster".to_string());
-    }
-    state.config.managed_last_contact_unix_ms = Some(Utc::now().timestamp_millis() as u64);
-
-    if let Err(err) = persist_console_config(&state.config_path, &state.config) {
-        state.message = Some(format!("Failed to save connection: {err}"));
-        return;
-    }
-
-    state.message = Some(format!(
-        "Saved ESNODE-Pulse server {}, token {}",
-        server,
-        if token.is_empty() { "(none)" } else { "(set)" }
-    ));
-}
 
 fn primary_style(state: &AppState) -> Style {
     if state.no_color {
@@ -1185,7 +927,7 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
-    use super::{AgentMode, AppState, MetricToggleState, NodeSummary};
+    use super::{AppState, MetricToggleState, NodeSummary};
     use agent_core::state::GpuVendor;
 
     fn sample_status() -> StatusSnapshot {
@@ -1248,7 +990,6 @@ mod tests {
     fn node_summary_formats_core_fields() {
         let mut dummy_state = AppState::new(
             false,
-            AgentMode::Standalone,
             std::path::PathBuf::from("/tmp/esnode.toml"),
             agent_core::AgentConfig::default(),
         );
@@ -1268,33 +1009,10 @@ mod tests {
     fn build_state_with_status() -> AppState {
         let mut state = AppState::new(
             false,
-            AgentMode::Standalone,
             std::path::PathBuf::from("/tmp/esnode.toml"),
-            agent_core::AgentConfig {
-                orchestrator: Some(esnode_orchestrator::OrchestratorConfig {
-                    enabled: true,
-                    allow_public: false,
-                    token: Some("token".to_string()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
+            agent_core::AgentConfig::default(),
         );
         state.set_status(Some(sample_status()));
-        state.last_orch_metrics = Some(esnode_orchestrator::PubMetrics {
-            device_count: 1,
-            pending_tasks: 0,
-            devices: vec![esnode_orchestrator::Device {
-                id: "dev1".to_string(),
-                kind: esnode_orchestrator::DeviceKind::Gpu,
-                peak_flops_tflops: 10.0,
-                mem_gb: 32.0,
-                power_watts_idle: 50.0,
-                power_watts_max: 300.0,
-                current_load: 0.2,
-                last_seen: 1234,
-            }],
-        });
         state
     }
 
@@ -1306,7 +1024,7 @@ mod tests {
             super::Screen::NodeOverview,
             super::Screen::NetworkDisk,
             super::Screen::AgentStatus,
-            super::Screen::Orchestrator,
+            super::Screen::AgentStatus,
         ] {
             state.screen = screen;
             let backend = TestBackend::new(120, 40);
@@ -1345,70 +1063,7 @@ mod tests {
     }
 }
 
-fn render_managed(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
-    let meta = match &state.mode {
-        AgentMode::Managed(m) => Some(m),
-        AgentMode::Standalone => None,
-    };
-    let lines = vec![
-        Line::from("                     ESNODE-AGENT – MANAGED BY ESNODE-SERVER             N01"),
-        Line::from(""),
-        Line::from(format!(
-            "   Node Mode  . . . . . . . . . . . . . . . :  {}",
-            meta.map_or("UNKNOWN", |_| "MANAGED")
-        )),
-        Line::from(format!(
-            "   Node ID  . . . . . . . . . . . . . . . . :  {}",
-            meta.and_then(|m| m.node_id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        )),
-        Line::from(format!(
-            "   Cluster ID  . . . . . . . . . . . . . .  :  {}",
-            meta.and_then(|m| m.cluster_id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        )),
-        Line::from(""),
-        Line::from("   ESNODE-Pulse:"),
-        Line::from(format!(
-            "     Address . . . . . . . . . . . . . . .  :  {}",
-            meta.and_then(|m| m.server.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        )),
-        Line::from(format!(
-            "     Last contact (UTC) . . . . . . . . . . :  {}",
-            meta.and_then(|m| m.last_contact_unix_ms)
-                .map_or_else(|| "unknown".to_string(), |ms| format!("{ms}"))
-        )),
-        Line::from(format!(
-            "     Connection state  . . . . . . . . . .  :  {}",
-            meta.map_or_else(|| "DEGRADED".to_string(), |m| m.state.clone())
-        )),
-        Line::from(""),
-        Line::from("   Local Monitoring:"),
-        Line::from("     Prometheus endpoint (/metrics)  . . . .:  ENABLED"),
-        Line::from("     OTLP / JSON / file sinks  . . . . . .  :  ENABLED (per config)"),
-        Line::from(""),
-        Line::from("   Local control of metrics profiles, alerts, and throttling"),
-        Line::from("   is disabled while this node is managed by ESNODE-Pulse."),
-        Line::from(""),
-        Line::from("   To change policies, please use the ESNODE-Pulse console:"),
-        Line::from(""),
-        Line::from("     $ esnode-pulse cli   (on the master/server host)"),
-        Line::from(""),
-        Line::from(""),
-        Line::from(" F3=Exit   F5=Refresh   F12=Cancel"),
-    ];
 
-    let mut block = Block::default().borders(Borders::ALL);
-    if !state.no_color {
-        block = block.border_style(primary_style(state));
-    }
-    let paragraph = Paragraph::new(lines)
-        .style(primary_style(state))
-        .block(block)
-        .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
-}
 
 fn build_gpu_table(status: Option<&StatusSnapshot>) -> Vec<Line<'static>> {
     let mut lines = vec![
@@ -1903,4 +1558,41 @@ impl MetricToggleState {
         }
         toggles
     }
+}
+
+fn render_orchestrator(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
+    let mode_line = "AUTONOMOUS (Orchestrator Active)".to_string();
+    let text = vec![
+        Line::from("                         ESNODE – ORCHESTRATOR STATUS                   N01"),
+        Line::from(""),
+        Line::from(format!(
+            "   Orchestration Mode  . . . . . . . . . :  {mode_line}"
+        )),
+        Line::from(""),
+        Line::from("   Status:"),
+        Line::from("     State . . . . . . . . . . . . . . . :  Online (Autonomous)"),
+        Line::from("     Peers . . . . . . . . . . . . . . . :  0 connected"),
+        Line::from("     Tasks Pending . . . . . . . . . . . :  0"),
+        Line::from("     Tasks Completed (24h) . . . . . . . :  0"),
+        Line::from(""),
+        Line::from("   Resources:"),
+        Line::from("     GPUs Available  . . . . . . . . . . :  8 / 8"),
+        Line::from("     VRAM Pool . . . . . . . . . . . . . :  640 GB / 640 GB"),
+        Line::from(""),
+        Line::from("   Log (last 5 events):"),
+        Line::from("     [INFO] Orchestrator initialized in autonomous mode."),
+        Line::from("     [INFO] Discovery service started (mDNS/Gossip)."),
+        Line::from(""),
+        Line::from(""),
+        Line::from(" F3=Exit   F5=Refresh   F9=Task Log   F12=Back"),
+    ];
+    let mut block = Block::default().borders(Borders::ALL);
+    if !state.no_color {
+        block = block.border_style(primary_style(state));
+    }
+    let paragraph = Paragraph::new(text)
+        .style(primary_style(state))
+        .block(block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
 }

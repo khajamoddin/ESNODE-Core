@@ -13,7 +13,7 @@ pub struct StatusState {
     node_power_microwatts: Arc<AtomicU64>,
     cpu_package_power_watts: Arc<RwLock<Vec<PackagePower>>>,
     cpu_temperatures: Arc<RwLock<Vec<TemperatureReading>>>,
-    gpu_status: Arc<RwLock<Vec<GpuStatus>>>,
+    pub gpu_status: Arc<RwLock<Vec<GpuStatus>>>,
     load_avg_1m: Arc<AtomicU64>,
     last_errors: Arc<RwLock<VecDeque<CollectorError>>>,
     last_scrape_unix_ms: Arc<AtomicU64>,

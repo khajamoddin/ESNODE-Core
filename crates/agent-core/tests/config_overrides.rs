@@ -30,11 +30,7 @@ fn overrides_apply_all_booleans_and_scalars() {
         local_tsdb_path: Some("/tmp/tsdb".to_string()),
         local_tsdb_retention_hours: Some(12),
         local_tsdb_max_disk_mb: Some(321),
-        managed_server: Some(Some("srv".to_string())),
-        managed_cluster_id: Some(Some("cluster".to_string())),
-        managed_node_id: Some(Some("node".to_string())),
-        managed_join_token: Some(Some("token".to_string())),
-        managed_last_contact_unix_ms: Some(Some(123)),
+
         node_power_envelope_watts: Some(456.0),
         log_level: None,
     };
@@ -62,10 +58,6 @@ fn overrides_apply_all_booleans_and_scalars() {
     assert_eq!(base.local_tsdb_path, "/tmp/tsdb");
     assert_eq!(base.local_tsdb_retention_hours, 12);
     assert_eq!(base.local_tsdb_max_disk_mb, 321);
-    assert_eq!(base.managed_server.as_deref(), Some("srv"));
-    assert_eq!(base.managed_cluster_id.as_deref(), Some("cluster"));
-    assert_eq!(base.managed_node_id.as_deref(), Some("node"));
-    assert_eq!(base.managed_join_token.as_deref(), Some("token"));
-    assert_eq!(base.managed_last_contact_unix_ms, Some(123));
+
     assert_eq!(base.node_power_envelope_watts, Some(456.0));
 }

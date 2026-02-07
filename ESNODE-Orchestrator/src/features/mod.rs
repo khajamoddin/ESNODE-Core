@@ -6,3 +6,4 @@ pub mod prefetch;
 pub mod reaper;
 pub mod traffic;
 pub mod turbo;
+pub mod thermal;

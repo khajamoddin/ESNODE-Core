@@ -1,6 +1,6 @@
 # ESNODE-Core build & packaging guide
 
-This repository builds the ESNODE-Core agent (`esnode-core`). The ESNODE-Pulse controller lives in a separate, private codebase.
+This repository builds the ESNODE-Core agent (`esnode-core`).
 
 ## Prerequisites
 - Rust toolchain (cargo) installed.

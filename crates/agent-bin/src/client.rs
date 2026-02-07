@@ -46,6 +46,7 @@ impl AgentClient {
         Ok(body)
     }
 
+    #[allow(dead_code)]
     pub fn fetch_orchestrator_metrics(&self) -> Result<esnode_orchestrator::PubMetrics> {
         let (status, body) = self.http_get("/orchestrator/metrics")?;
         if status == 404 {
@@ -59,6 +60,8 @@ impl AgentClient {
             serde_json::from_str(&body).context("parsing orchestrator metrics")?;
         Ok(metrics)
     }
+
+
 
     fn http_get(&self, path: &str) -> Result<(u16, String)> {
         let url = Url::parse(&format!("{}{}", self.base_url, path)).context("parsing URL")?;

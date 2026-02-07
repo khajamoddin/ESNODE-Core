@@ -223,11 +223,7 @@ sum(
 )
 ```
 
-**Cluster tokens-per-watt via esnode-pulse (per agent):**
 
-```promql
-esnode_server_tokens_per_watt
-```
 
 You can turn these into **tokens per kWh** by scaling:
 

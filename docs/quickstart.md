@@ -13,8 +13,6 @@ Power requirements:
 
 > **Tagline:** ESNODE — a GPU-aware node_exporter for the AI era. One binary, all metrics.
 >
-> **Control plane note:** Agents can run standalone (full local TUI/CLI) or attach to an ESNODE-Pulse for centralized control. Metrics (`/metrics`, OTLP, logs) stay enabled in both modes.
->
 > **Operator heads-up:** The local TSDB defaults to a user-writable XDG path (e.g. `~/.local/share/esnode/tsdb`) so non-root runs succeed; set `local_tsdb_path` to `/var/lib/esnode/tsdb` if you prefer a system path. Orchestrator control APIs are loopback-only by default; set `orchestrator.allow_public=true` **and** `orchestrator.token` to expose them safely.
 
 ## Installation options (choose your path)
@@ -132,11 +130,7 @@ log_level = "info"
 # local_tsdb_path = "~/.local/share/esnode/tsdb"  # defaults to XDG_DATA_HOME/esnode/tsdb if unset
 # local_tsdb_retention_hours = 48
 # local_tsdb_max_disk_mb = 2048
-# Optional control-plane attachment (managed mode)
-# managed_server = "esnode-master-01:7443"
-# managed_cluster_id = "CLU-XXXX"
-# managed_node_id = "gpu-node-01"
-# managed_join_token = "ABC123"
+# local_tsdb_max_disk_mb = 2048
 
 [orchestrator]
 enabled = false                # Master toggle for orchestration
@@ -239,40 +233,7 @@ Notes:
 - Prometheus alerts: `docs/dashboards/alerts.yaml` (includes disk/network/gpu degradation and aggregate score)
 ```
 
-Common control-plane commands:
-```bash
-# Attach to ESNODE-Pulse (persist server + IDs, disables local tuning)
-esnode-core server connect --address esnode-master-01:7443 --token ABC123
-# Disconnect (return to standalone/local control)
-esnode-core server disconnect
-# Show connection state
-esnode-core server status
-```
 
-The metrics plane stays active in all states; `/metrics` keeps exporting Prometheus text unless you explicitly disable it in config.
-
-### 3.3 ESNODE-Pulse + TSDB flags
-
-> ESNODE-Pulse is the licensed controller distributed separately; these flags are provided for operators who have access to that binary.
-
-```bash
-esnode-pulse \
-  --listen 0.0.0.0:9200 \
-  --agent http://node1:9100 \
-  --agent http://node2:9100 \
-  --tsdb-backend opentsdb \
-  --tsdb-url http://tsdb:4242 \
-  --tsdb-auth "Bearer XXX" \
-  --tsdb-write-enabled true \
-  --tsdb-read-enabled true \
-  --tsdb-backfill-enabled true \
-  --storage-path /var/lib/esnode-pulse
-```
-
-- `tsdb-backend`: `opentsdb` (live), `remote_write`/`victoriametrics`/`timescale` (stubs ready for future).
-- Write path: server polls `/metrics` and forwards to TSDB; `esnode_server_tsdb_write_errors` tracks failures.
-- Read path: `/api/metrics/history?agent_id=...&metric=...&from=...&to=...` proxies to the backend (Prom/Grafana friendly JSON).
-- Backfill: when enabled, gaps trigger `GET /tsdb/export` on agents and stream into the backend; cursors persist in `storage_path/last_seen.json`.
 
 ---
 
@@ -344,9 +305,7 @@ Check metrics:
 curl http://localhost:9100/metrics | head
 ```
 
-Managed vs standalone:
-- Standalone: run `esnode-core cli` to open the AS/400-style console and toggle metric sets.
-- Managed (after `server connect` to a licensed ESNODE-Pulse controller): `esnode-core cli` shows a read-only “Managed by ESNODE-Pulse” screen; tuning must be done on the server via `esnode-pulse cli` or server CLI commands. Metrics remain available at `/metrics`.
+
 
 ---
 
@@ -471,9 +430,7 @@ Reload Prometheus and verify that the `esnode` job is being scraped.
 
 ---
 
-## ESNODE-Pulse (aggregator stub)
 
-The ESNODE-Pulse controller is licensed and maintained separately. Use the registered distribution or private repository for controller builds; it is not part of this standalone ESNODE-Core project.
 
 ---
 

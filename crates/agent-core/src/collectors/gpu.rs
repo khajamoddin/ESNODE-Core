@@ -21,9 +21,6 @@ use std::time::Instant;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 use tokio::sync::mpsc;
 
-#[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
-use anyhow::Result;
-
 use crate::collectors::Collector;
 use crate::config::AgentConfig;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
@@ -37,7 +34,7 @@ use crate::state::{
 };
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 use nvml_wrapper::error::NvmlError;
-#[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
+#[cfg(feature = "gpu")]
 pub struct GpuCollector {
     #[cfg(feature = "gpu")]
     nvml: Option<Nvml>,
@@ -1230,7 +1227,7 @@ fn build_filter(raw: Option<&str>) -> Option<HashSet<String>> {
 }
 
 #[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
-fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> Result<MigTree> {
+fn collect_mig_devices(_nvml: &Nvml, parent: &nvml_wrapper::Device) -> anyhow::Result<MigTree> {
     use nvml_wrapper_sys::bindings::{
         nvmlComputeInstanceInfo_t, nvmlDevice_t, nvmlGpuInstanceInfo_t,
         nvmlReturn_enum_NVML_SUCCESS, nvmlReturn_t,

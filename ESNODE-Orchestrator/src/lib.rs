@@ -38,6 +38,10 @@ pub struct Device {
     pub power_watts_idle: f64,
     pub power_watts_max: f64,
     pub current_load: f64,
+    pub temperature_celsius: Option<f64>,
+    pub real_power_watts: Option<f64>,
+    #[serde(default)]
+    pub assigned_tasks: Vec<String>,
     #[serde(skip)]
     pub last_seen: u64,
 }
@@ -86,6 +90,7 @@ pub struct OrchestratorConfig {
     pub enable_dataset_prefetch: bool,
     pub enable_bandwidth_reserve: bool,
     pub enable_fs_cleanup: bool,
+    pub enable_thermal_management: bool,
 }
 
 impl Default for OrchestratorConfig {
@@ -100,7 +105,9 @@ impl Default for OrchestratorConfig {
             enable_flash_preemption: false,
             enable_dataset_prefetch: false,
             enable_bandwidth_reserve: false,
+
             enable_fs_cleanup: false,
+            enable_thermal_management: false,
         }
     }
 }
@@ -151,9 +158,16 @@ impl Orchestrator {
         let peak_flops = dev.peak_flops_tflops * 1e12_f64;
         let eff_flops = peak_flops * (1.0 - dev.current_load).max(0.1);
         let time_seconds = task.est_flops / eff_flops.max(1e-6);
-        let effective_load = (dev.current_load + 0.2).min(1.0);
-        let power_watts = (dev.power_watts_max - dev.power_watts_idle)
-            .mul_add(effective_load, dev.power_watts_idle);
+
+        // Use real power if available, else estimate
+        let power_watts = if let Some(real) = dev.real_power_watts {
+            real
+        } else {
+            let effective_load = (dev.current_load + 0.2).min(1.0);
+            (dev.power_watts_max - dev.power_watts_idle)
+                .mul_add(effective_load, dev.power_watts_idle)
+        };
+        
         power_watts * time_seconds
     }
 
@@ -180,9 +194,16 @@ impl Orchestrator {
             if !Self::device_allowed(task, dev) {
                 continue;
             }
-            // Skip overloaded devices
             if dev.current_load >= 0.95 {
                 continue;
+            }
+            // Skip overheating devices (> 90C critical, > 85 warning)
+            if self.config.enable_thermal_management {
+                if let Some(temp) = dev.temperature_celsius {
+                    if temp > 85.0 {
+                        continue;
+                    }
+                }
             }
 
             let perf = Self::perf_score(task, dev);
@@ -262,6 +283,9 @@ impl Orchestrator {
         }
         if self.config.enable_fs_cleanup {
             features::cleanup::check_filesystem(self);
+        }
+        if self.config.enable_thermal_management {
+            features::thermal::check_thermals(self);
         }
     }
 }

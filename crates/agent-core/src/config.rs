@@ -56,16 +56,7 @@ pub struct AgentConfig {
     pub enable_app: bool,
     #[serde(default)]
     pub enable_rack_thermals: bool,
-    #[serde(default)]
-    pub managed_server: Option<String>,
-    #[serde(default)]
-    pub managed_cluster_id: Option<String>,
-    #[serde(default)]
-    pub managed_node_id: Option<String>,
-    #[serde(default)]
-    pub managed_join_token: Option<String>,
-    #[serde(default)]
-    pub managed_last_contact_unix_ms: Option<u64>,
+
     #[serde(default)]
     pub node_power_envelope_watts: Option<f64>,
     #[serde(default)]
@@ -103,11 +94,7 @@ impl Default for AgentConfig {
             enable_mcp: false,
             enable_app: false,
             enable_rack_thermals: false,
-            managed_server: None,
-            managed_cluster_id: None,
-            managed_node_id: None,
-            managed_join_token: None,
-            managed_last_contact_unix_ms: None,
+
             node_power_envelope_watts: None,
             enable_local_tsdb: true,
             local_tsdb_path: default_local_tsdb_path(),
@@ -115,6 +102,7 @@ impl Default for AgentConfig {
             local_tsdb_max_disk_mb: default_local_tsdb_max_disk_mb(),
             log_level: LogLevel::Info,
             orchestrator: None,
+
             app_metrics_url: "http://127.0.0.1:8000/metrics".to_string(),
         }
     }
@@ -148,16 +136,7 @@ pub struct ConfigOverrides {
     pub enable_app: Option<bool>,
     #[serde(default)]
     pub enable_rack_thermals: Option<bool>,
-    #[serde(default)]
-    pub managed_server: Option<Option<String>>,
-    #[serde(default)]
-    pub managed_cluster_id: Option<Option<String>>,
-    #[serde(default)]
-    pub managed_node_id: Option<Option<String>>,
-    #[serde(default)]
-    pub managed_join_token: Option<Option<String>>,
-    #[serde(default)]
-    pub managed_last_contact_unix_ms: Option<Option<u64>>,
+
     #[serde(default)]
     pub node_power_envelope_watts: Option<f64>,
     #[serde(default)]
@@ -171,6 +150,7 @@ pub struct ConfigOverrides {
     pub log_level: Option<LogLevel>,
     #[serde(default)]
     pub orchestrator: Option<esnode_orchestrator::OrchestratorConfig>,
+    #[serde(default)]
     pub app_metrics_url: Option<String>,
 }
 
@@ -182,6 +162,7 @@ impl AgentConfig {
         if let Some(orch) = overrides.orchestrator {
             self.orchestrator = Some(orch);
         }
+
         if let Some(scrape_interval) = overrides.scrape_interval {
             self.scrape_interval = scrape_interval;
         }
@@ -230,21 +211,7 @@ impl AgentConfig {
         if let Some(enable_rack_thermals) = overrides.enable_rack_thermals {
             self.enable_rack_thermals = enable_rack_thermals;
         }
-        if let Some(managed_server) = overrides.managed_server {
-            self.managed_server = managed_server;
-        }
-        if let Some(managed_cluster_id) = overrides.managed_cluster_id {
-            self.managed_cluster_id = managed_cluster_id;
-        }
-        if let Some(managed_node_id) = overrides.managed_node_id {
-            self.managed_node_id = managed_node_id;
-        }
-        if let Some(managed_join_token) = overrides.managed_join_token {
-            self.managed_join_token = managed_join_token;
-        }
-        if let Some(last_contact) = overrides.managed_last_contact_unix_ms {
-            self.managed_last_contact_unix_ms = last_contact;
-        }
+
         if let Some(envelope) = overrides.node_power_envelope_watts {
             self.node_power_envelope_watts = Some(envelope);
         }

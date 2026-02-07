@@ -11,8 +11,9 @@ use std::{
 use agent_core::{Agent, AgentConfig, ConfigOverrides, LogLevel};
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+
 use client::AgentClient;
-use console::{run_console, AgentMode, ManagedMetadata};
+use console::{run_console};
 use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser, Debug)]
@@ -102,21 +103,11 @@ struct Cli {
     #[arg(long, env = "ESNODE_LOCAL_TSDB_MAX_DISK_MB")]
     local_tsdb_max_disk_mb: Option<u64>,
 
-    /// If set, indicates this agent is managed by an ESNODE-Pulse (read-only console).
-    #[arg(long, env = "ESNODE_MANAGED_SERVER")]
-    managed_server: Option<String>,
-
-    /// Optional cluster ID when managed by server.
-    #[arg(long, env = "ESNODE_MANAGED_CLUSTER_ID")]
-    managed_cluster_id: Option<String>,
-
-    /// Optional node ID when managed by server.
-    #[arg(long, env = "ESNODE_MANAGED_NODE_ID")]
-    managed_node_id: Option<String>,
-
     /// Enable ESNODE-Orchestrator (Autonomous features)
     #[arg(long, env = "ESNODE_ENABLE_ORCHESTRATOR")]
     pub enable_orchestrator: Option<bool>,
+
+
 
     /// Enable App/Model Awareness collector
     #[arg(long, env = "ESNODE_ENABLE_APP")]
@@ -166,11 +157,7 @@ enum Command {
         #[command(subcommand)]
         action: ConfigCommand,
     },
-    /// Server control-plane commands.
-    Server {
-        #[command(subcommand)]
-        action: ServerCommand,
-    },
+
 }
 
 #[derive(Debug, Subcommand)]
@@ -190,20 +177,7 @@ enum MetricsProfile {
     PowerOnly,
 }
 
-#[derive(Debug, Subcommand)]
-enum ServerCommand {
-    /// Connect this agent to an ESNODE-Pulse and persist config.
-    Connect {
-        #[arg(long)]
-        address: String,
-        #[arg(long)]
-        _token: Option<String>,
-    },
-    /// Disconnect from an ESNODE-Pulse (return to standalone).
-    Disconnect,
-    /// Show connection status.
-    Status,
-}
+
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum MetricSet {
@@ -257,25 +231,15 @@ async fn main() -> Result<()> {
         }
         Command::Cli => {
             let client = AgentClient::new(&config.listen_address);
-            let mode = agent_mode(&config);
+
             run_console(
                 &client,
                 cli.no_color,
-                mode,
                 config_path.clone(),
                 config.clone(),
             )
         }
-        Command::Server { action } => {
-            match action {
-                ServerCommand::Connect { address, _token } => {
-                    command_server_connect(&config_path, &config, address, None)?;
-                }
-                ServerCommand::Disconnect => command_server_disconnect(&config_path, &config)?,
-                ServerCommand::Status => command_server_status(&config),
-            }
-            Ok(())
-        }
+
         Command::Config { action } => match action {
             ConfigCommand::Show => command_config_show(&config_path, &config),
             ConfigCommand::Set { key_value } => command_config_set(&config_path, key_value),
@@ -296,6 +260,8 @@ fn load_config_file(path: &Path) -> Result<ConfigOverrides> {
     let overrides: ConfigOverrides = toml::from_str(&contents)?;
     Ok(overrides)
 }
+
+
 
 fn cli_to_overrides(cli: &Cli) -> Result<ConfigOverrides> {
     let orchestrator = if cli.enable_orchestrator.unwrap_or(false) {
@@ -326,11 +292,6 @@ fn cli_to_overrides(cli: &Cli) -> Result<ConfigOverrides> {
         enable_app: cli.enable_app,
         app_metrics_url: cli.app_metrics_url.clone(),
         enable_rack_thermals: None,
-        managed_server: cli.managed_server.clone().map(Some),
-        managed_cluster_id: cli.managed_cluster_id.clone().map(Some),
-        managed_node_id: cli.managed_node_id.clone().map(Some),
-        managed_join_token: None,
-        managed_last_contact_unix_ms: None,
         node_power_envelope_watts: cli.node_power_envelope_watts,
         enable_local_tsdb: cli.enable_local_tsdb,
         local_tsdb_path: cli.local_tsdb_path.clone(),
@@ -457,8 +418,7 @@ fn command_toggle_metric_set(path: &Path, set: MetricSet, enable: bool) -> Resul
         let file_overrides = load_config_file(path)?;
         config.apply_overrides(file_overrides);
     }
-    ensure_local_control(&config)?;
-
+    
     match set {
         MetricSet::Host => {
             config.enable_cpu = enable;
@@ -544,7 +504,6 @@ fn command_config_set(path: &Path, pair: &str) -> Result<()> {
         let file_overrides = load_config_file(path)?;
         config.apply_overrides(file_overrides);
     }
-    ensure_local_control(&config)?;
     apply_config_kv(&mut config, key, value)?;
     persist_config(path, &config)?;
     println!("Updated {} in {}", key, path.display());
@@ -564,11 +523,7 @@ fn apply_config_kv(config: &mut AgentConfig, key: &str, val: &str) -> Result<()>
         "enable_mcp" => config.enable_mcp = val.parse()?,
         "enable_app" => config.enable_app = val.parse()?,
         "enable_rack_thermals" => config.enable_rack_thermals = val.parse()?,
-        "managed_server" => config.managed_server = Some(val.to_string()),
-        "managed_cluster_id" => config.managed_cluster_id = Some(val.to_string()),
-        "managed_node_id" => config.managed_node_id = Some(val.to_string()),
-        "managed_join_token" => config.managed_join_token = Some(val.to_string()),
-        "managed_last_contact_unix_ms" => config.managed_last_contact_unix_ms = Some(val.parse()?),
+
         "node_power_envelope_watts" => config.node_power_envelope_watts = Some(val.parse()?),
         "log_level" => config.log_level = parse_log_level(Some(val))?.unwrap(),
         other => bail!("unknown config key {other}"),
@@ -576,104 +531,9 @@ fn apply_config_kv(config: &mut AgentConfig, key: &str, val: &str) -> Result<()>
     Ok(())
 }
 
-fn ensure_local_control(config: &AgentConfig) -> Result<()> {
-    if let Some(server) = &config.managed_server {
-        bail!("This node is managed by ESNODE-Pulse ({server}); local control is disabled");
-    }
-    Ok(())
-}
 
-fn agent_mode(config: &AgentConfig) -> AgentMode {
-    config
-        .managed_server
-        .as_ref()
-        .map_or(AgentMode::Standalone, |srv| {
-            AgentMode::Managed(ManagedMetadata {
-                server: Some(srv.clone()),
-                cluster_id: config.managed_cluster_id.clone(),
-                node_id: config.managed_node_id.clone(),
-                last_contact_unix_ms: config.managed_last_contact_unix_ms,
-                state: if config.managed_last_contact_unix_ms.is_some() {
-                    "CONNECTED".to_string()
-                } else {
-                    "DEGRADED".to_string()
-                },
-            })
-        })
-}
 
-fn command_server_connect(
-    path: &Path,
-    current: &AgentConfig,
-    address: &str,
-    token: Option<String>,
-) -> Result<()> {
-    let mut config = current.clone();
-    config.managed_server = Some(address.to_string());
-    config.managed_join_token.clone_from(&token);
-    if config.managed_node_id.is_none() {
-        config.managed_node_id = Some(default_node_id());
-    }
-    if config.managed_cluster_id.is_none() {
-        config.managed_cluster_id = Some("unknown-cluster".to_string());
-    }
-    config.managed_last_contact_unix_ms = Some(chrono::Utc::now().timestamp_millis() as u64);
-    persist_config(path, &config)?;
-    println!("Connected to ESNODE-Pulse at {address}");
-    if let Some(_tok) = token {
-        println!("Join token persisted");
-    }
-    Ok(())
-}
 
-fn command_server_disconnect(path: &Path, current: &AgentConfig) -> Result<()> {
-    let mut config = current.clone();
-    config.managed_server = None;
-    config.managed_cluster_id = None;
-    config.managed_node_id = None;
-    config.managed_join_token = None;
-    config.managed_last_contact_unix_ms = None;
-    persist_config(path, &config)?;
-    println!("Disconnected from ESNODE-Pulse; standalone mode restored");
-    Ok(())
-}
-
-fn command_server_status(config: &AgentConfig) {
-    if let Some(server) = &config.managed_server {
-        let degraded = config.managed_last_contact_unix_ms.is_none();
-        println!("Managed by ESNODE-Pulse");
-        println!("  Server: {server}");
-        println!(
-            "  Cluster ID: {}",
-            config
-                .managed_cluster_id
-                .clone()
-                .unwrap_or_else(|| "-".to_string())
-        );
-        println!(
-            "  Node ID: {}",
-            config
-                .managed_node_id
-                .clone()
-                .unwrap_or_else(default_node_id)
-        );
-        if let Some(last) = config.managed_last_contact_unix_ms {
-            println!("  Last contact (unix ms): {last}");
-        } else {
-            println!("  Last contact: unknown (degraded)");
-        }
-        println!(
-            "  State: {}",
-            if degraded { "DEGRADED" } else { "CONNECTED" }
-        );
-    } else {
-        println!("Not connected to any ESNODE-Pulse (standalone)");
-    }
-}
-
-fn default_node_id() -> String {
-    std::env::var("HOSTNAME").unwrap_or_else(|_| "node-unknown".to_string())
-}
 
 #[cfg(test)]
 mod tests {

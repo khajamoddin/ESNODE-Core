@@ -143,10 +143,7 @@ impl Agent {
                 .with_label_values(&["power"])
                 .set(1.0);
         }
-        let agent_label = config
-            .managed_node_id
-            .clone()
-            .unwrap_or_else(|| "local".to_string());
+        let agent_label = "local".to_string();
         if config.enable_app {
             info!("App collector enabled (url={})", config.app_metrics_url);
             metrics
@@ -243,6 +240,31 @@ impl Agent {
         let tsdb_pruner_handle = local_tsdb
             .clone()
             .map(|tsdb| tsdb.spawn_pruner(std::time::Duration::from_secs(60)));
+        
+        let orchestrator_state_clone = if let Some(orch_config) = &config.orchestrator {
+             if orch_config.enabled {
+                let devices = vec![]; 
+                let orchestrator = esnode_orchestrator::Orchestrator::new(devices, orch_config.clone());
+                Some(esnode_orchestrator::AppState {
+                    orchestrator: std::sync::Arc::new(std::sync::RwLock::new(orchestrator)),
+                    token: orch_config.token.clone(),
+                })
+             } else {
+                 None
+             }
+        } else {
+            None
+        };
+
+        if let Some(state) = &orchestrator_state_clone {
+             info!("Initializing ESNODE-Orchestrator...");
+             let loop_state = state.clone();
+             tokio::spawn(async move {
+                esnode_orchestrator::run_loop(loop_state).await;
+             });
+        }
+        
+        let orch_state_clone_for_update = orchestrator_state_clone.clone();
 
         let collection_task = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(scrape_interval);
@@ -269,6 +291,30 @@ impl Agent {
                 status_state.set_last_scrape(now_ms);
                 healthy_clone.store(all_ok, Ordering::Relaxed);
                 status_state.update_degradation_score(&metrics_clone);
+
+                // --- Orchestrator Integration ---
+                if let Some(orch_app_state) = &orch_state_clone_for_update {
+                    if let Ok(mut orch) = orch_app_state.orchestrator.write() {
+                        let gpu_status = status_state.gpu_status.read().unwrap();
+                        for gpu in gpu_status.iter() {
+                            let id = gpu.uuid.clone().unwrap_or(gpu.gpu.clone());
+                            let device = esnode_orchestrator::Device {
+                                id: id.clone(),
+                                kind: esnode_orchestrator::DeviceKind::Gpu,
+                                peak_flops_tflops: 100.0, // Placeholder or derive from model
+                                mem_gb: gpu.memory_total_bytes.unwrap_or(0.0) / 1024.0 / 1024.0 / 1024.0,
+                                power_watts_idle: 20.0, // Estimation
+                                power_watts_max: gpu.power_watts.unwrap_or(250.0).max(100.0),
+                                current_load: gpu.util_percent.unwrap_or(0.0) / 100.0,
+                                temperature_celsius: gpu.temperature_celsius,
+                                real_power_watts: gpu.power_watts,
+                                assigned_tasks: vec![],
+                                last_seen: now_ms,
+                            };
+                            orch.update_device(device);
+                        }
+                    }
+                }
                 drop(guard);
 
                 if let Some(tsdb) = tsdb_for_collection.clone() {
@@ -282,33 +328,9 @@ impl Agent {
                 }
             }
         });
-
-        // Initialize Orchestrator
-        let orchestrator_state = if let Some(orch_config) = &config.orchestrator {
-            if orch_config.enabled {
-                info!("Initializing ESNODE-Orchestrator...");
-                let devices = vec![]; // TODO: Populate from collectors?
-                let orchestrator =
-                    esnode_orchestrator::Orchestrator::new(devices, orch_config.clone());
-                let state = esnode_orchestrator::AppState {
-                    orchestrator: std::sync::Arc::new(std::sync::RwLock::new(orchestrator)),
-                    token: orch_config.token.clone(),
-                };
-
-                // Spawn the tick loop
-                let loop_state = state.clone();
-                tokio::spawn(async move {
-                    esnode_orchestrator::run_loop(loop_state).await;
-                });
-
-                Some(state)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
+                
+        // Orchestrator already initialized above
+        let orchestrator_state = orchestrator_state_clone;
         let http_state = HttpState {
             metrics: metrics.clone(),
             healthy: healthy.clone(),

@@ -4,7 +4,7 @@
 
 ![ESNODE-Core TUI Home Screen](docs/images/esnode-tui-home.png)
 
-This repository contains the source, build tooling, and documentation for the ESNODE-Core Agent. The ESNODE-Pulse controller is maintained separately (licensed) and is not part of this codebase.
+This repository contains the source, build tooling, and documentation for the ESNODE-Core Agent.
 ## Supported server OS targets (AI infra focused)
 - Ubuntu Server (primary, ~60–70% of AI fleet; best CUDA/driver/toolchain support)
 - RHEL-compatible: RHEL / Rocky Linux / AlmaLinux (enterprise compliance, FIPS-ready)
@@ -12,9 +12,9 @@ This repository contains the source, build tooling, and documentation for the ES
 - SUSE Linux Enterprise Server (SLES) (enterprise/HPC niches)
 - Debian (research/custom environments)
 
-Packaging is provided as tar.gz plus optional deb/rpm; Windows zips are included for hybrid labs. On Linux, install scripts set up binaries under `/usr/local/bin` and create systemd units so `esnode-core` runs without extra PATH tweaks (ESNODE-Pulse ships separately).
+Packaging is provided as tar.gz plus optional deb/rpm; Windows zips are included for hybrid labs. On Linux, install scripts set up binaries under `/usr/local/bin` and create systemd units so `esnode-core` runs without extra PATH tweaks.
 
-ESNODE-Core is a GPU-aware host metrics exporter for Linux nodes. It exposes CPU, memory, disk, network, and GPU telemetry at `/metrics` in Prometheus text format so observability stacks can scrape a single endpoint per node. Agents can run standalone or attach to an ESNODE-Pulse control plane while keeping Prometheus/OTLP outputs unchanged.
+ESNODE-Core is a GPU-aware host metrics exporter for Linux nodes. It exposes CPU, memory, disk, network, and GPU telemetry at `/metrics` in Prometheus text format so observability stacks can scrape a single endpoint per node. Agents run in standalone mode.
 
 ### GPU/MIG visibility and build requirements
 - GPU metrics require the `gpu` feature (enabled by default). MIG metrics additionally require building with the `gpu-nvml-ffi` feature and enabling `enable_gpu_mig` in config; otherwise MIG metrics will remain zero.
@@ -35,13 +35,18 @@ ESNODE-Core is a GPU-aware host metrics exporter for Linux nodes. It exposes CPU
 - Health endpoint at `/healthz`.
 - JSON status endpoint at `/status` (`/v1/status` alias) with node load, power, temps, GPU snapshot (identity/health/MIG tree), last scrape/errors; SSE stream at `/events` for near-real-time loops.
 - Degradation signals: disk busy/latency, network drops/retrans, swap spikes, and GPU throttle/ECC flags roll up into `esnode_degradation_score`; surfaced in `/status` and the TUI.
-- Control-plane safety: orchestrator `/orchestrator/*` binds loopback-only by default; set `orchestrator.allow_public=true` to expose, and use `orchestrator.token` to require `Authorization: Bearer <token>`. Auth successes/failures and task/heartbeat actions emit structured audit logs (target `audit`).
+- Degradation signals: disk busy/latency, network drops/retrans, swap spikes, and GPU throttle/ECC flags roll up into `esnode_degradation_score`; surfaced in `/status` and the TUI.
 - Local TSDB defaults to a user-writable XDG path so non-root runs no longer fail on `/var/lib/esnode/tsdb`; override with `local_tsdb_path` when you want `/var/lib`.
 
-## Power- & Model-awareness (roadmap)
-- Power: keep `esnode_gpu_power_watts` and add optional `esnode_cpu_package_power_watts`, `esnode_node_power_watts`, and PDU/BMC readings where available (RAPL/hwmon/IPMI).
- - Model metadata: pair ESNODE with app-exported metrics such as `model_tokens_total`, `model_requests_total`, and latency histograms labeled by `model`/`namespace`.
- - Efficiency: use PromQL like `sum(rate(model_tokens_total[5m])) / sum(rate(esnode_node_power_watts[5m]))` for tokens-per-watt and scale to tokens-per-kWh; see `docs/monitoring-examples.md` for dashboards.
+## Power-Aware Orchestration (v0.2)
+- **Thermal Management**: Automatically shifts workloads away from overheating devices (>85°C) using real-time thermal telemetry.
+- **Energy Efficiency**: Scoring algorithm prefers devices with better performance-per-watt metrics.
+- **Local Control Plane**: Autonomous decision making (preemption, bin-packing) runs directly on the node without external dependencies.
+- **Model Awareness**: App collector integration allows for custom application metrics (e.g., tokens/sec) to influence scheduling decisions.
+
+## Future Roadmap (v0.3+)
+- **Cluster Federation**: Connect multiple independent nodes via Gossip protocol.
+- **Global Optimization**: Cross-node workload migration for rack-level power capping.
 
 ## Licensing & Distribution
 - Source-available under ESNODE BUSL-1.1 (see `LICENSE`).
@@ -49,20 +54,11 @@ ESNODE-Core is a GPU-aware host metrics exporter for Linux nodes. It exposes CPU
 - Contributions require agreement to `docs/CLA.md`.
 - Official binaries and commercial terms are controlled solely by Estimatedstocks AB.
 
-### Product split (effective now)
-- **ESNODE-Core (public, source-available)**  
-  - License: current ESNODE BUSL-style terms.  
-  - Usage: free for internal use; redistribution/trademark restrictions still apply.  
-  - Distribution: public binaries at `https://esnode.co/downloads`.
-- **ESNODE-Pulse (licensed-only, revenue-based; separate repo)**  
-  - License: proprietary.  
-  - Revenue rule: ≤ USD 2M revenue → free starter license after registration; > USD 2M → paid subscription required before production use.  
-  - Distribution: **not** in this repository. Binaries are provided only after registration via `https://esnode.co/products#pulse` (or designated portal).
+
 
 ## Components
 - `esnode-core`: per-node collector exposing Prometheus `/metrics`, JSON `/status` (`/v1/status`), and SSE `/events`.
-- `esnode-orchestrator`: optional autonomous resource manager (embedded lib, CLI-configurable).
-- `esnode-pulse`: licensed controller that polls agents and centralizes policy/alerts (not included in this repository).
+- `esnode-core`: per-node collector exposing Prometheus `/metrics`, JSON `/status` (`/v1/status`), and SSE `/events`.
 
 See `docs/architecture.md` and `docs/platform-matrix.md` for topology and build targets.
 
@@ -83,7 +79,7 @@ Configuration precedence: CLI flags > env vars > `esnode.toml` > defaults. See `
   - `mig_config_devices` / `NVIDIA_MIG_CONFIG_DEVICES` – filter MIG-capable GPUs when `enable_gpu_mig` is true.
   - Optional `gpu-nvml-ffi-ext` feature enables additional NVML field-based counters (PCIe/etc.), best-effort only.
   - `enable_app` + `app_metrics_url` – app/model metrics collector uses a 2s HTTP timeout; slow or hung endpoints are skipped for that scrape without blocking other collectors.
-  - Orchestrator control API (`/orchestrator/*`) is exposed only on loopback listeners by default; set `orchestrator.allow_public=true` explicitly if you need to serve it on non-loopback addresses and configure `orchestrator.token` to require `Authorization: Bearer <token>`.
+  - `enable_app` + `app_metrics_url` – app/model metrics collector uses a 2s HTTP timeout; slow or hung endpoints are skipped for that scrape without blocking other collectors.
 
 Local TSDB path (default): when `enable_local_tsdb` is true, the agent now resolves `local_tsdb_path` to `$XDG_DATA_HOME/esnode/tsdb` or `~/.local/share/esnode/tsdb` so non-root runs don’t fail on `/var/lib`. Set `ESNODE_LOCAL_TSDB_PATH` or the config key if you want `/var/lib/esnode/tsdb` and ensure the directory is writable by the agent user.
 
@@ -109,12 +105,7 @@ Community & policies:
 - Sponsorship: see `docs/sponsorship.md` (GitHub Sponsors for ESNODE).
 - Containers: see `docs/container.md` for distroless build/run instructions.
 
-### Agent ↔ Server connection (summary)
-- Standalone: full local CLI/TUI, toggle metric sets, `/metrics` always on.
-- Connect to server: `esnode-core server connect --address <host:port> [--token <join_token>]` persists server + IDs and flips to managed mode (local tuning disabled, metrics plane untouched).
-- Disconnect: `esnode-core server disconnect` returns to standalone.
-- Status: `esnode-core server status` shows server, cluster ID, node ID, last contact.
-- TUI: `esnode-core cli` shows full menu when standalone; shows managed read-only panel when attached to ESNODE-Pulse.
+
 
 ### Operator notes (day 1)
 - TUI surfaces degradation flags/score on Node Overview, Network & Disk, Agent Status; orchestrator screen shows token/loopback exposure.
@@ -162,11 +153,7 @@ Example commands (adjust version/OS paths):
   ```
 - Windows/macOS artifacts will follow the same public repo layout when available.
 
-## ESNODE-Pulse (Enterprise controller – licensed)
-- Not distributed publicly or within this codebase. Binaries are provided only after registration/approval.  
-- Revenue rule: ≤ USD 2M revenue → free starter license (registration required). > USD 2M → paid subscription before production use.  
-- Request access: `https://esnode.co/products#pulse` (submit company + revenue band, accept terms).  
-- ESNODE-Pulse binaries must not be mirrored to the public distribution paths; see the private repository for build details.
+
 
 ## Deployment artifacts
 - Docker: `Dockerfile` (builds from `public/distribution/releases/linux-amd64/esnode-core-0.1.0-linux-amd64.tar.gz`)
@@ -222,7 +209,7 @@ Run `terraform init && terraform apply` with a configured kubecontext. Update th
 - Architecture: `docs/architecture.md`
 - Platform matrix: `docs/platform-matrix.md`
 - Dashboards & alerts: `docs/dashboards/grafana-esnode-core.json` and `docs/dashboards/alerts.yaml` (import into Grafana/Prometheus)
-- Smoke test script: `scripts/smoke.sh` (builds, runs core+pulse locally, curls endpoints)
+- Smoke test script: `scripts/smoke.sh` (builds, runs core locally, curls endpoints)
 
 ## Kubernetes Deployment
 

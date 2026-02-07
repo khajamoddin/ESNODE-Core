@@ -12,6 +12,7 @@ This crate provides optional, advanced orchestration capabilities for the ESNODE
     - **Dataset Prefetching**: Loads data ahead of computation.
     - **Bandwidth Reserves**: Quality of Service for network traffic.
     - **Filesystem Cleanup**: Maintains storage health.
+    - **Thermal Management**: Monitors device temps and shifts workloads to cool devices.
 
 ## Usage
 

@@ -1,8 +1,8 @@
 ESNODE | Source Available BUSL-1.1 | Copyright (c) 2025 Estimatedstocks AB
 
-# ESNODE Architecture (ESNODE-Core + ESNODE-Pulse)
+# ESNODE Architecture (ESNODE-Core)
 
-ESNODE-Core lives in this repository. ESNODE-Pulse is the licensed controller shipped separately; references below are for operators who have access to it.
+ESNODE-Core lives in this repository.
 
 ## Components
 - `esnode-core`: per-node collector exposing:
@@ -12,22 +12,12 @@ ESNODE-Core lives in this repository. ESNODE-Pulse is the licensed controller sh
   - `/healthz`
 - `esnode-orchestrator`: optional autonomous resource manager (embedded lib, CLI-configurable) exposing:
   - `/orchestrator/metrics` JSON status
-- `esnode-pulse`: polling/aggregator that:
-  - polls agents’ `/status` and `/metrics`
-  - exposes aggregated `/agents` JSON
-- exposes `/metrics` (server-side Prometheus: agent availability, node power, tokens-per-watt, tokens-per-joule)
-  - `/healthz`
-  - simple master/slave hint via `--role` plus optional `--master-url` heartbeat failover
 
 ## Data Flow
 1) Agent collectors gather host/GPU/power metrics on interval; publish to Prometheus + JSON snapshot + SSE.
-2) Server polls agents (master role only), caches JSON, scrapes metrics to derive node power and tokens-per-watt (if `model_tokens_total` is present) and tokens-per-joule (using token and node energy deltas).
-3) Server exposes aggregated metrics for Prometheus/Grafana.
 
-## Failover (minimal stub)
-- `--role master|slave`
-- Slaves can watch `--master-url`; on heartbeat failure, they self-promote (best-effort).
-- Stateless: caches live in memory; persistence can be added (sled/sqlite) later.
+
+
 
 ## Notes
 - NVLink counters and ECC are best-effort; set only when supported by NVML (ECC deltas emitted per GPU/type).

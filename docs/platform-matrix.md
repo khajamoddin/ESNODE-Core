@@ -17,7 +17,7 @@ Notes:
 - GPU features (NVML/NVLink/ECC) require NVIDIA drivers + NVML present on host/container.
 - Power collectors: RAPL/hwmon/BMC/IPMI availability varies by hardware/firmware; envelope flag requires `--node-power-envelope-watts`.
 - Service managers: systemd unit provided for Linux; Windows installer scripts provided (NSSM). macOS/launchd not shipped.
-- Binaries: `esnode-core` (in this repo) is built per target OS/arch; `esnode-pulse` ships separately as a licensed controller. Ensure OpenSSL/Rustls compatibility on chosen platform.
+- Binaries: `esnode-core` (in this repo) is built per target OS/arch. Ensure OpenSSL/Rustls compatibility on chosen platform.
 
 ## GPU / CUDA / Driver compatibility (validation matrix)
 
