@@ -27,6 +27,14 @@ impl LogLevel {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum EnforcementMode {
+    #[default]
+    Audit,
+    Enforce,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
     pub listen_address: String,
@@ -72,6 +80,18 @@ pub struct AgentConfig {
     pub orchestrator: Option<esnode_orchestrator::OrchestratorConfig>,
     #[serde(default)]
     pub app_metrics_url: String,
+
+    // Efficiency as Code
+    #[serde(default)]
+    pub efficiency_profile_path: Option<String>,
+    #[serde(default)]
+    pub enforcement_mode: EnforcementMode,
+    #[serde(default = "default_enforcement_interval")]
+    #[serde(with = "humantime_serde")]
+    pub enforcement_interval: Duration,
+    #[serde(default = "default_dampening_interval")]
+    #[serde(with = "humantime_serde")]
+    pub dampening_interval: Duration,
 }
 
 impl Default for AgentConfig {
@@ -104,6 +124,10 @@ impl Default for AgentConfig {
             orchestrator: None,
 
             app_metrics_url: "http://127.0.0.1:8000/metrics".to_string(),
+            efficiency_profile_path: None,
+            enforcement_mode: EnforcementMode::Audit,
+            enforcement_interval: default_enforcement_interval(),
+            dampening_interval: default_dampening_interval(),
         }
     }
 }
@@ -152,6 +176,13 @@ pub struct ConfigOverrides {
     pub orchestrator: Option<esnode_orchestrator::OrchestratorConfig>,
     #[serde(default)]
     pub app_metrics_url: Option<String>,
+
+    pub efficiency_profile_path: Option<String>,
+    pub enforcement_mode: Option<EnforcementMode>,
+    #[serde(with = "humantime_serde::option")]
+    pub enforcement_interval: Option<Duration>,
+    #[serde(with = "humantime_serde::option")]
+    pub dampening_interval: Option<Duration>,
 }
 
 impl AgentConfig {
@@ -211,6 +242,18 @@ impl AgentConfig {
         if let Some(enable_rack_thermals) = overrides.enable_rack_thermals {
             self.enable_rack_thermals = enable_rack_thermals;
         }
+        if let Some(efficiency_profile_path) = overrides.efficiency_profile_path {
+            self.efficiency_profile_path = Some(efficiency_profile_path);
+        }
+        if let Some(enforcement_mode) = overrides.enforcement_mode {
+            self.enforcement_mode = enforcement_mode;
+        }
+        if let Some(enforcement_interval) = overrides.enforcement_interval {
+            self.enforcement_interval = enforcement_interval;
+        }
+        if let Some(dampening_interval) = overrides.dampening_interval {
+            self.dampening_interval = dampening_interval;
+        }
 
         if let Some(envelope) = overrides.node_power_envelope_watts {
             self.node_power_envelope_watts = Some(envelope);
@@ -252,4 +295,12 @@ const fn default_local_tsdb_retention_hours() -> u64 {
 
 const fn default_local_tsdb_max_disk_mb() -> u64 {
     2048
+}
+
+const fn default_enforcement_interval() -> Duration {
+    Duration::from_secs(30)
+}
+
+const fn default_dampening_interval() -> Duration {
+    Duration::from_secs(300)
 }

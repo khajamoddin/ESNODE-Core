@@ -30,8 +30,10 @@ use crate::metrics::MetricsRegistry;
 use crate::state::{ComputeInstanceNode, GpuInstanceNode, MigTree};
 use crate::state::{
     FabricLink, FabricLinkType, GpuCapabilities, GpuHealth, GpuIdentity, GpuStatus, GpuTopo,
-    GpuVendor, MigDeviceStatus, StatusState,
+    GpuVendor, StatusState,
 };
+#[cfg(all(feature = "gpu", feature = "gpu-nvml-ffi"))]
+use crate::state::MigDeviceStatus;
 #[cfg(all(feature = "gpu", target_os = "linux"))]
 use nvml_wrapper::error::NvmlError;
 #[cfg(feature = "gpu")]
@@ -494,6 +496,10 @@ impl Collector for GpuCollector {
                     let uncorrected =
                         device.total_ecc_errors(MemoryError::Uncorrected, counter.clone());
                     if let (Ok(c), Ok(u)) = (corrected, uncorrected) {
+                        if matches!(counter, EccCounter::Aggregate) {
+                           health.ecc_corrected_aggregate = Some(c);
+                           health.ecc_uncorrected_aggregate = Some(u);
+                        }
                         let total = c.saturating_add(u);
                         let key = format!("{gpu_label}:{label}");
                         let prev = *self.ecc_prev.get(&key).unwrap_or(&0);

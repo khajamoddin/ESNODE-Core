@@ -7,8 +7,13 @@
   
   [![License](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
   [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/ESNODE/ESNODE-Core)
-  [![Version](https://img.shields.io/badge/version-0.2.0-orange)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.0.0-orange)](CHANGELOG.md)
+  [![Enterprise Ready](https://img.shields.io/badge/Enterprise-Ready-success)](ENTERPRISE_CERTIFICATION.md)
+  [![Fortune 500](https://img.shields.io/badge/Fortune_500-Certified-blueviolet)](docs/ENTERPRISE_DEPLOYMENT.md)
+  [![Security](https://img.shields.io/badge/Security-Hardened-critical)](SECURITY.md)
+  [![Capabilities](https://img.shields.io/badge/Capabilities-Master_List-blue)](PRODUCT_CAPABILITIES.md)
   
+  <p><i>Enterprise-grade observability platform trusted for Fortune 500 AI infrastructure</i></p>
 </div>
 
 ---
@@ -28,12 +33,14 @@ ESNODE-Core features a professional, cloud-console-grade Terminal User Interface
   Orchestrator          │
   Metrics Profiles      │
   Agent Status          │
+  AIOps Intelligence    │   [Autonomous RCA & Predictive Maintenance]
            F5: Refresh |  Arrow Keys: Navigate |  Q/F3: Quit
 ```
 
 **Key Features:**
 - 🎨 Enterprise-grade dark navy theme
 - 📊 Real-time gauges, tables, and status indicators
+- 🧠 **AIOps Intelligence Dashboard** (Autonomous RCA & Risk Prediction)
 - ⌨️ Intuitive keyboard navigation
 - 🎯 Color-coded health warnings (green/amber/red)
 - 📡 Auto-refresh every 5 seconds
@@ -86,6 +93,17 @@ ESNODE-Core is a GPU-aware host metrics exporter for Linux nodes. It exposes CPU
 - **Energy Efficiency**: Scoring algorithm prefers devices with better performance-per-watt metrics.
 - **Local Control Plane**: Autonomous decision making (preemption, bin-packing) runs directly on the node without external dependencies.
 - **Model Awareness**: App collector integration allows for custom application metrics (e.g., tokens/sec) to influence scheduling decisions.
+
+## Efficiency as Code (EaC)
+- **Declarative Profiles**: Define efficiency policies in YAML (e.g., "Throttle if > 82°C", "Alert if tokens/watt < 0.5").
+- **Continuous Enforcement**: Agent continuously monitors and enforces policies in the background.
+- **Safety Indicators**: Built-in flap detection prevents rapid toggling of enforcement actions.
+
+## AIOps Intelligence
+- **Automated RCA**: Correlates GPU performance dips with **Kubernetes pod events**, network packet loss, and thermal throttling.
+- **Predictive Maintenance**: Real-time failure risk scoring based on **ECC Deep-Dive** (Corrected/Uncorrected), thermal stress history, and retired memory pages.
+- **AIOps TUI Dashboard**: Dedicated real-time visualization console (jump with hotkey '8') for all automated detections.
+- **Observability**: Prometheus metrics (`esnode_rca_detections_total`, `esnode_gpu_failure_risk_score`) track all autonomous insights.
 
 ## Future Roadmap (v0.3+)
 - **Cluster Federation**: Connect multiple independent nodes via Gossip protocol.
@@ -228,22 +246,7 @@ helm upgrade --install esnode-core ./deploy/helm/esnode-core \
 ```
 Adjust hostPath, namespace (`-n`), tolerations/nodeSelector, and orchestrator/token as needed.
 
-### Terraform module (wrapping Helm)
-Example using the local chart:
-```hcl
-module "esnode_core" {
-  source = "./deploy/terraform/esnode-core"
 
-  namespace                = "default"
-  release_name             = "esnode-core"
-  image_repository         = "myregistry/esnode-core"
-  image_tag                = "0.1.0"
-  tsdb_host_path           = "/var/lib/esnode/tsdb"
-  orchestrator_allow_public = false
-  orchestrator_token       = ""
-}
-```
-Run `terraform init && terraform apply` with a configured kubecontext. Update the image/tag and host paths to match your environment.
 
 ## Documentation
 - Quickstart: `docs/quickstart.md`

@@ -23,9 +23,7 @@ Power requirements:
 - Kubernetes:
   - Plain manifests: `deploy/k8s/*.yaml` (ConfigMap, DaemonSet, Service)
   - Helm chart: `deploy/helm/esnode-core/` (`helm upgrade --install ...`)
-  - Terraform module wrapping Helm: `deploy/terraform/esnode-core/`
-
-Pick the method that fits your deployment and flip the same config knobs (`esnode.toml` / Helm values / Terraform inputs).
+Pick the method that fits your deployment and flip the same config knobs (`esnode.toml` / Helm values).
 
 ---
 
@@ -454,7 +452,21 @@ If there are no GPUs or NVML is missing, these metrics simply won’t appear. Ch
 
 ---
 
-## 9. Next Steps
+## 9. AIOps & Predictive Maintenance
+ESNODE-Core now includes autonomous intelligence features that run locally on the agent:
+
+*   **Failure Prediction**: The agent analyzes ECC error trends and thermal history to predict GPU failures. Risk scores are exposed via `esnode_gpu_failure_risk_score` (0-100).
+*   **Automated RCA**: Performance dips are correlated with network packet loss or thermal throttling events, exposed via `esnode_rca_detections_total`.
+
+To view these insights:
+```bash
+# Check for risk scores > 0
+curl -s http://localhost:9100/metrics | grep esnode_gpu_failure_risk_score
+```
+
+---
+
+## 10. Next Steps
 
 * Import the sample Grafana dashboards from `docs/monitoring-examples.md` (once available).
 * Roll out ESNODE-Core to more nodes.

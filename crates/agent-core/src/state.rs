@@ -21,6 +21,28 @@ pub struct StatusState {
     disk_degraded: Arc<AtomicBool>,
     network_degraded: Arc<AtomicBool>,
     swap_degraded: Arc<AtomicBool>,
+    // AIOps data
+    rca_events: Arc<RwLock<Vec<AIOpsRcaEvent>>>,
+    risk_assessments: Arc<RwLock<Vec<AIOpsRiskAssessment>>>,
+}
+
+// AIOps: Root Cause Analysis Event
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct AIOpsRcaEvent {
+    pub gpu_id: String,
+    pub timestamp_ms: u64,
+    pub root_cause: String,
+    pub confidence: f64,
+    pub details: String,
+}
+
+// AIOps: Predictive Maintenance Risk Assessment
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct AIOpsRiskAssessment {
+    pub gpu_id: String,
+    pub failure_probability: f64,
+    pub risk_score: f64,
+    pub factors: Vec<String>,
 }
 
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -76,7 +98,15 @@ pub struct StatusSnapshot {
     #[serde(default)]
     pub swap_degraded: bool,
     #[serde(default)]
+    pub k8s_events_detected: bool,
+    #[serde(default)]
     pub degradation_score: u64,
+    // AIOps: Root Cause Analysis events
+    #[serde(default)]
+    pub rca_events: Vec<AIOpsRcaEvent>,
+    // AIOps: Predictive maintenance risk scores
+    #[serde(default)]
+    pub risk_assessments: Vec<AIOpsRiskAssessment>,
 }
 
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -205,6 +235,10 @@ pub struct GpuHealth {
     pub bar1_total_bytes: Option<u64>,
     #[serde(default)]
     pub bar1_used_bytes: Option<u64>,
+    #[serde(default)]
+    pub ecc_corrected_aggregate: Option<u64>,
+    #[serde(default)]
+    pub ecc_uncorrected_aggregate: Option<u64>,
 }
 
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -335,6 +369,7 @@ pub struct HostMetrics {
     pub net_tx_bytes_per_sec: Option<f64>,
     pub net_drops_per_sec: Option<f64>,
     pub app_tokens_per_sec: Option<f64>,
+    pub k8s_events_detected: Option<bool>,
 }
 
 impl StatusState {
@@ -352,6 +387,8 @@ impl StatusState {
             disk_degraded: Arc::new(AtomicBool::new(false)),
             network_degraded: Arc::new(AtomicBool::new(false)),
             swap_degraded: Arc::new(AtomicBool::new(false)),
+            rca_events: Arc::new(RwLock::new(Vec::new())),
+            risk_assessments: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -431,19 +468,10 @@ impl StatusState {
             disk_degraded: self.disk_degraded.load(Ordering::Relaxed),
             network_degraded: self.network_degraded.load(Ordering::Relaxed),
             swap_degraded: self.swap_degraded.load(Ordering::Relaxed),
-            degradation_score: {
-                let mut score = 0u64;
-                if self.disk_degraded.load(Ordering::Relaxed) {
-                    score += 1;
-                }
-                if self.network_degraded.load(Ordering::Relaxed) {
-                    score += 1;
-                }
-                if self.swap_degraded.load(Ordering::Relaxed) {
-                    score += 1;
-                }
-                score
-            },
+            k8s_events_detected: host.k8s_events_detected.unwrap_or(false),
+            degradation_score: self.calculate_degradation_score(),
+            rca_events: self.rca_events.read().map(|g| g.clone()).unwrap_or_default(),
+            risk_assessments: self.risk_assessments.read().map(|g| g.clone()).unwrap_or_default(),
         }
     }
 
@@ -455,6 +483,10 @@ impl StatusState {
     pub fn set_load_avg(&self, load: f64) {
         self.load_avg_1m
             .store((load * 1000.0) as u64, Ordering::Relaxed);
+    }
+
+    pub fn get_load_avg_1m(&self) -> u64 {
+        self.load_avg_1m.load(Ordering::Relaxed)
     }
 
     pub fn set_last_scrape(&self, unix_ms: u64) {
@@ -577,17 +609,42 @@ impl StatusState {
         self.swap_degraded.store(degraded, Ordering::Relaxed);
     }
 
-    pub fn update_degradation_score(&self, metrics: &crate::metrics::MetricsRegistry) {
-        let mut score = 0.0;
+    pub fn set_k8s_events_detected(&self, detected: bool) {
+        if let Ok(mut guard) = self.host.write() {
+            guard.k8s_events_detected = Some(detected);
+        }
+    }
+
+    pub fn calculate_degradation_score(&self) -> u64 {
+        let mut score = 0u64;
         if self.disk_degraded.load(Ordering::Relaxed) {
-            score += 1.0;
+            score += 1;
         }
         if self.network_degraded.load(Ordering::Relaxed) {
-            score += 1.0;
+            score += 1;
         }
         if self.swap_degraded.load(Ordering::Relaxed) {
-            score += 1.0;
+            score += 1;
         }
-        metrics.degradation_score.set(score);
+        score
+    }
+
+    pub fn update_degradation_score(&self, metrics: &crate::metrics::MetricsRegistry) {
+        let score = self.calculate_degradation_score();
+        metrics.degradation_score.set(score as f64);
+    }
+
+    // AIOps: Update RCA Events
+    pub fn update_rca_events(&self, events: Vec<AIOpsRcaEvent>) {
+        if let Ok(mut guard) = self.rca_events.write() {
+            *guard = events;
+        }
+    }
+
+    // AIOps: Update Risk Assessments
+    pub fn update_risk_assessments(&self, assessments: Vec<AIOpsRiskAssessment>) {
+        if let Ok(mut guard) = self.risk_assessments.write() {
+            *guard = assessments;
+        }
     }
 }

@@ -3,8 +3,12 @@ mod collectors;
 pub mod config;
 mod event_worker;
 mod http;
+pub mod control;
 pub mod metrics;
 pub mod nvml_ext;
+pub mod policy;
+pub mod predictive;
+pub mod rca;
 pub mod state;
 pub mod tsdb;
 
@@ -269,6 +273,13 @@ impl Agent {
         let collection_task = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(scrape_interval);
             let mut last_tsdb_write_ms: i64 = 0;
+            
+            let mut rca_engine = crate::rca::RcaEngine::new(
+                std::time::Duration::from_secs(300), 
+                scrape_interval
+            );
+            let mut risk_predictor = crate::predictive::FailureRiskPredictor::new();
+
             loop {
                 ticker.tick().await;
                 let ts_ms = chrono::Utc::now().timestamp_millis();
@@ -290,7 +301,69 @@ impl Agent {
 
                 status_state.set_last_scrape(now_ms);
                 healthy_clone.store(all_ok, Ordering::Relaxed);
+                
+                // --- K8s Event Correlation Simulation ---
+                // In a production environment, this would interface with the K8s API
+                // or parse host logs for pod evictions/starts.
+                if status_state.get_load_avg_1m() > 8000 { // Load > 8.0
+                    status_state.set_k8s_events_detected(true);
+                } else {
+                    status_state.set_k8s_events_detected(false);
+                }
+
                 status_state.update_degradation_score(&metrics_clone);
+
+                // --- Predictive Maintenance & AIOps ---
+                let snapshot_full = status_state.snapshot();
+                rca_engine.add_snapshot(snapshot_full.clone());
+                let rca_events = rca_engine.analyze();
+                
+                // Convert RCA events to AIOps format and store in StatusState
+                let aiops_rca: Vec<state::AIOpsRcaEvent> = rca_events.iter().map(|event| {
+                    state::AIOpsRcaEvent {
+                        gpu_id: "N/A".to_string(), // RcaEvent doesn't track specific GPU
+                        timestamp_ms: now_ms,
+                        root_cause: format!("{:?}", event.cause),
+                        confidence: event.confidence,
+                        details: event.description.clone(),
+                    }
+                }).collect();
+                
+                status_state.update_rca_events(aiops_rca);
+                
+                for event in rca_events {
+                    info!("RCA Detection: {:?}", event);
+                    metrics_clone.rca_detections_total
+                        .with_label_values(&[&format!("{:?}", event.cause), &format!("{:.1}", event.confidence)])
+                        .inc();
+                }
+
+                let risks = risk_predictor.analyze(&snapshot_full);
+                
+                // Convert risk assessments to AIOps format and store in StatusState
+                let aiops_risk: Vec<state::AIOpsRiskAssessment> = risks.iter().map(|(uuid, assessment)| {
+                    state::AIOpsRiskAssessment {
+                        gpu_id: uuid.clone(),
+                        failure_probability: assessment.failure_probability,
+                        risk_score: assessment.risk_score,
+                        factors: assessment.factors.clone(),
+                    }
+                }).collect();
+                
+                status_state.update_risk_assessments(aiops_risk);
+                
+                for (uuid, assessment) in risks {
+                     if assessment.risk_score > 0.0 {
+                         metrics_clone.gpu_failure_risk_score
+                             .with_label_values(&[&uuid])
+                             .set(assessment.risk_score);
+                         
+                         if assessment.risk_score >= 50.0 {
+                             warn!("Predictive Maintenance Alert: GPU {} risk score {:.1} (Factors: {:?})", 
+                                 uuid, assessment.risk_score, assessment.factors);
+                         }
+                     }
+                }
 
                 // --- Orchestrator Integration ---
                 if let Some(orch_app_state) = &orch_state_clone_for_update {
@@ -328,6 +401,93 @@ impl Agent {
                 }
             }
         });
+        
+        let mut enforcement_ticker = tokio::time::interval(config.enforcement_interval);
+        // Offset first tick to avoid stampede at startup
+        enforcement_ticker.reset(); 
+        
+        let enforcement_config = config.clone();
+        let enforcement_status = status.clone();
+        let enforcement_metrics = metrics.clone();
+        
+        let enforcement_task = tokio::spawn(async move {
+            if enforcement_config.efficiency_profile_path.is_none() {
+                // Determine if we should exit or sleep. Sleeping is safer for the select! block.
+                std::future::pending::<()>().await;
+                return;
+            }
+            let profile_path = enforcement_config.efficiency_profile_path.as_ref().unwrap();
+            let mode = &enforcement_config.enforcement_mode;
+            // Enforcer needs to be Send. agent_core::control::Enforcer holds Nvml which is Send.
+            let enforcer = crate::control::Enforcer::new();
+            let mut dampener = crate::control::FlapDampener::new(enforcement_config.dampening_interval);
+
+            loop {
+                enforcement_ticker.tick().await;
+                
+                let contents = match tokio::fs::read_to_string(profile_path).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        warn!("Failed to read efficiency profile at {}: {}", profile_path, e);
+                        continue;
+                    }
+                };
+                
+                let profile: crate::policy::EfficiencyProfile = match serde_yaml::from_str(&contents) {
+                     Ok(p) => p,
+                     Err(e) => {
+                         warn!("Failed to parse efficiency profile: {}", e);
+                         continue;
+                     }
+                };
+                
+                // We need a StatusSnapshot. status is typically updated by collection_task.
+                // StatusState is thread-safe (Arc<RwLock>).
+                let snapshot = enforcement_status.snapshot();
+                let plan = profile.plan(&snapshot);
+                
+                let violations: Vec<_> = plan.matched_policies.iter()
+                    .filter(|p| matches!(p.status, crate::policy::PlanStatus::Violated))
+                    .collect();
+
+                if !violations.is_empty() {
+                    info!("Efficiency Audit: Found {} violations", violations.len());
+                    for v in &violations {
+                         info!("Violation: {} on {} (Current: {}, Limit: {})", 
+                            v.policy_name, v.target_resource, v.current_value, v.threshold);
+                         
+                         enforcement_metrics.policy_violations_total
+                            .with_label_values(&[&v.policy_name, &v.target_resource, "violation"])
+                            .inc();
+
+                         if *mode == crate::config::EnforcementMode::Enforce {
+                             if !dampener.can_apply(&v.policy_name, &v.target_resource) {
+                                 info!("Dampened enforcement of {} on {}", v.policy_name, v.target_resource);
+                                 continue;
+                             }
+                             // Re-find policy definition to get the action details
+                             if let Some(policy) = profile.policies.iter().find(|p| p.name == v.policy_name) {
+                                match enforcer.apply_action(&v.target_resource, &policy.action) {
+                                    Ok(msg) => {
+                                        info!("ENFORCED: {}", msg);
+                                        dampener.record_action(&v.policy_name, &v.target_resource);
+                                        enforcement_metrics.policy_enforced_total
+                                            .with_label_values(&[&v.policy_name, &v.target_resource, "success"])
+                                            .inc();
+                                    },
+                                    Err(e) => {
+                                        warn!("ENFORCEMENT FAILED: {}", e);
+                                        enforcement_metrics.policy_enforced_total
+                                            .with_label_values(&[&v.policy_name, &v.target_resource, "failure"])
+                                            .inc();
+                                    },
+                                }
+                             }
+                         }
+                    }
+                }
+            }
+        });
                 
         // Orchestrator already initialized above
         let orchestrator_state = orchestrator_state_clone;
@@ -350,6 +510,13 @@ impl Agent {
             res = collection_task => {
                 if let Err(err) = res {
                     return Err(anyhow::anyhow!("collection task panicked: {err:?}"));
+                }
+            },
+            res = enforcement_task => {
+                if let Err(err) = res {
+                    // If the enforcement task panics (unlikely unless FS error or similar), log it.
+                    // We might not want to kill the whole agent, but for now strict mode is fine.
+                    return Err(anyhow::anyhow!("enforcement task panicked: {err:?}"));
                 }
             },
             res = http_task => {

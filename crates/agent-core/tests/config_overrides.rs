@@ -33,6 +33,10 @@ fn overrides_apply_all_booleans_and_scalars() {
 
         node_power_envelope_watts: Some(456.0),
         log_level: None,
+        efficiency_profile_path: None,
+        enforcement_mode: None,
+        enforcement_interval: None,
+        dampening_interval: None,
     };
 
     base.apply_overrides(overrides);

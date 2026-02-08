@@ -142,6 +142,10 @@ pub struct MetricsRegistry {
     pub agent_config_reloads_total: IntCounter,
     pub agent_collector_disabled: GaugeVec,
     pub app_tokens_per_sec: Gauge,
+    pub policy_violations_total: IntCounterVec,
+    pub policy_enforced_total: IntCounterVec,
+    pub rca_detections_total: IntCounterVec,
+    pub gpu_failure_risk_score: GaugeVec,
 }
 
 impl MetricsRegistry {
@@ -953,6 +957,37 @@ impl MetricsRegistry {
             "Application token generation rate (tokens/sec)",
         ))?;
 
+        let policy_violations_total = IntCounterVec::new(
+            Opts::new(
+                "esnode_policy_violations_total",
+                "Total number of policy violations detected",
+            ),
+            &["policy", "target", "severity"],
+        )?;
+        let policy_enforced_total = IntCounterVec::new(
+            Opts::new(
+                "esnode_policy_enforced_total",
+                "Total number of policy enforcement actions taken",
+            ),
+            &["policy", "target", "action"],
+        )?;
+
+        let rca_detections_total = IntCounterVec::new(
+            Opts::new(
+                "esnode_rca_detections_total",
+                "Total number of root cause analysis events detected",
+            ),
+            &["cause", "confidence"],
+        )?;
+
+        let gpu_failure_risk_score = GaugeVec::new(
+            Opts::new(
+                "esnode_gpu_failure_risk_score",
+                "Predicted failure risk score (0-100)",
+            ),
+            &["uuid"],
+        )?;
+
         let metrics = Self {
             registry,
             cpu_load_avg_1m,
@@ -1084,6 +1119,10 @@ impl MetricsRegistry {
             agent_config_reloads_total,
             agent_collector_disabled,
             app_tokens_per_sec,
+            policy_violations_total,
+            policy_enforced_total,
+            rca_detections_total,
+            gpu_failure_risk_score,
         };
 
         metrics.register_all()?;
@@ -1223,6 +1262,10 @@ impl MetricsRegistry {
             Box::new(self.agent_config_reloads_total.clone()),
             Box::new(self.agent_collector_disabled.clone()),
             Box::new(self.app_tokens_per_sec.clone()),
+            Box::new(self.policy_violations_total.clone()),
+            Box::new(self.policy_enforced_total.clone()),
+            Box::new(self.rca_detections_total.clone()),
+            Box::new(self.gpu_failure_risk_score.clone()),
         ];
 
         for collector in regs.drain(..) {

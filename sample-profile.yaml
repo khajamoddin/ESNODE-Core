@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: EfficiencyProfile
+metadata:
+  name: "limit-idle-power"
+  version: "0.1.0"
+selectors:
+  match_tags:
+    env: "dev"
+policies:
+  - name: "cap-idle-gpus"
+    description: "If GPU is idle (util < 5%), reduce power limit to save energy."
+    target: gpu_utilization
+    condition: "< 5%"
+    severity: warning
+    action:
+      type: throttle_power
+      parameters:
+        limit_watts: 150
+  - name: "alert-overheating"
+    description: "Alert if GPU temp exceeds 85C."
+    target: gpu_temp_celsius
+    condition: "> 85"
+    severity: critical
+    action:
+      type: alert
+      parameters:
+        message: "GPU is overheating! Check cooling immediately."

@@ -166,7 +166,28 @@ All ESNODE-Core metrics are exposed at `/metrics` in Prometheus format and use t
 
 ---
 
-## 11. Agent Self-Metrics
+## 11. Efficiency as Code (Policy Enforcement)
+
+| Metric name                           | Type    | Labels                    | Description                                    |
+|---------------------------------------|---------|---------------------------|------------------------------------------------|
+| `esnode_policy_violations_total`      | Counter | `policy`,`target`,`severity` | Total number of policy violations detected. |
+| `esnode_policy_enforced_total`        | Counter | `policy`,`target`,`action`   | Total number of enforcement actions taken.  |
+
+---
+
+## 12. AIOps & Predictive Maintenance
+
+| Metric name                           | Type    | Labels                | Description                                            |
+|---------------------------------------|---------|-----------------------|--------------------------------------------------------|
+| `esnode_rca_detections_total`         | Counter | `cause`,`confidence`  | RCA detections (NetworkLatency, ThermalThrottling, PowerThrottling, **KubernetesEvents**). |
+| `esnode_gpu_failure_risk_score`       | Gauge   | `uuid`                | Predicted GPU failure risk score (0-100). |
+| `esnode_k8s_events_detected`         | Gauge   | *(none)*              | 1 if high load correlates with potential pod evictions/starts. |
+
+*The RCA engine correlates GPU performance dips with **Kubernetes pod events**, network packet loss, and thermal events. The failure predictor performs an **ECC Deep-Dive** (analyzing Corrected/Uncorrected aggregates) and thermal stress history.*
+
+---
+
+## 13. Agent Self-Metrics
 
 | Metric name                           | Type    | Labels          | Description                                    |
 |---------------------------------------|---------|-----------------|------------------------------------------------|

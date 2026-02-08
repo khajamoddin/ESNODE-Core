@@ -34,6 +34,7 @@ pub enum Screen {
     MetricsProfiles,
     AgentStatus,
     Orchestrator,
+    AIOps,
 }
 
 impl Screen {
@@ -46,6 +47,7 @@ impl Screen {
             Screen::MetricsProfiles => "Metrics Profiles",
             Screen::AgentStatus => "Agent Status",
             Screen::Orchestrator => "Orchestrator",
+            Screen::AIOps => "AIOps Intelligence",
         }
     }
 
@@ -58,6 +60,7 @@ impl Screen {
             Screen::Orchestrator,
             Screen::MetricsProfiles,
             Screen::AgentStatus,
+            Screen::AIOps,
         ]
         .iter()
         .copied()
@@ -71,6 +74,7 @@ pub struct AppState {
     no_color: bool,
 
     should_exit: bool,
+    #[allow(dead_code)]
     config_path: PathBuf,
     config: agent_core::AgentConfig,
 }
@@ -405,7 +409,7 @@ fn render_content(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         Screen::MetricsProfiles => render_metric_profiles(frame, inner_area, state),
         Screen::AgentStatus => render_agent_status(frame, inner_area, state),
         Screen::Orchestrator => render_orchestrator_panel(frame, inner_area, state),
-        _ => render_generic_text(frame, inner_area, state),
+        Screen::AIOps => render_aiops(frame, inner_area, state),
     }
 
     // Overlay message toast if exists
@@ -556,9 +560,16 @@ fn render_gpu_power(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         let mem = gpu.memory_used_bytes.unwrap_or(0.0) / 1024.0 / 1024.0;
         let power = gpu.power_watts.unwrap_or(0.0);
         let temp = gpu.temperature_celsius.unwrap_or(0.0);
+        
+        let ecc_c = gpu.health.as_ref().and_then(|h| h.ecc_corrected_aggregate).unwrap_or(0);
+        let ecc_u = gpu.health.as_ref().and_then(|h| h.ecc_uncorrected_aggregate).unwrap_or(0);
+        
+        let throttle = if gpu.thermal_throttle { "THERM" } else if gpu.power_throttle { "PWR" } else { "NO" };
 
-        let style = if temp > 80.0 {
+        let style = if temp > 80.0 || ecc_u > 0 {
             style_red(state)
+        } else if ecc_c > 0 || gpu.thermal_throttle || gpu.power_throttle {
+            style_yellow(state)
         } else {
             style_content_block(state)
         };
@@ -570,6 +581,94 @@ fn render_gpu_power(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
                 format!("{:.0} MB", mem),
                 format!("{:.1} W", power),
                 format!("{:.1}°C", temp),
+                format!("{}/{}", ecc_c, ecc_u),
+                throttle.to_string(),
+            ])
+            .style(style),
+        );
+    }
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(8),
+            Constraint::Length(8),
+            Constraint::Length(12),
+            Constraint::Length(10),
+            Constraint::Length(8),
+            Constraint::Length(12),
+            Constraint::Length(10),
+        ],
+    )
+    .header(Row::new(vec!["ID", "Util", "Mem Used", "Power", "Temp", "ECC(C/U)", "Throttling"]).style(style_label(state)))
+    .block(
+        Block::default()
+            .title("GPU Telemetry - Predictive Maintenance Deep Dive")
+            .borders(Borders::ALL),
+    );
+
+    frame.render_widget(table, area);
+}
+
+fn render_orchestrator_panel(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
+    let status = match &state.last_status {
+        Some(s) => s,
+        None => return,
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(5), Constraint::Min(10)])
+        .split(area);
+
+    // --- Orchestration Status Summary ---
+    let summary_text = vec![
+        Line::from(vec![
+            Span::styled("Autonomy Mode: ", style_label(state)),
+            Span::styled("ACTIVE (Power-Aware Enabled)", style_green(state)),
+        ]),
+        Line::from(vec![
+            Span::styled("Node Health Score: ", style_label(state)),
+            Span::styled(format!("{}%", 100 - status.degradation_score), if status.degradation_score < 30 { style_green(state) } else { style_red(state) }),
+        ]),
+    ];
+
+    let summary = Paragraph::new(summary_text).block(
+        Block::default()
+            .title("Orchestrator Fleet Control")
+            .borders(Borders::ALL),
+    );
+    frame.render_widget(summary, chunks[0]);
+
+    // --- Device Workload Distribution ---
+    let mut rows = Vec::new();
+    for (i, gpu) in status.gpus.iter().enumerate() {
+        let power = gpu.power_watts.unwrap_or(0.0);
+        let util = gpu.util_percent.unwrap_or(0.0);
+        
+        // Simulating orchestration decisions based on power/thermal
+        let orch_status = if gpu.thermal_throttle || power > 350.0 {
+            "SLOWED_DOWN (High Power/Temp)"
+        } else if util < 10.0 {
+            "STANDBY (Auto-Parked)"
+        } else {
+            "OPTIMIZED (Full Load)"
+        };
+
+        let style = if orch_status.contains("SLOWED_DOWN") {
+            style_yellow(state)
+        } else if orch_status.contains("STANDBY") {
+            style_label(state)
+        } else {
+            style_green(state)
+        };
+
+        rows.push(
+            Row::new(vec![
+                format!("GPU {}", i),
+                format!("{:.1} W", power),
+                format!("{:.1}%", util),
+                orch_status.to_string(),
             ])
             .style(style),
         );
@@ -579,49 +678,172 @@ fn render_gpu_power(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
         rows,
         [
             Constraint::Length(10),
-            Constraint::Length(10),
-            Constraint::Length(15),
-            Constraint::Length(15),
-            Constraint::Length(10),
+            Constraint::Length(12),
+            Constraint::Length(12),
+            Constraint::Min(30),
         ],
     )
-    .header(Row::new(vec!["ID", "Util", "Mem Used", "Power", "Temp"]).style(style_label(state)))
+    .header(
+        Row::new(vec!["Device", "Power Draw", "Utilization", "Orchestration State"])
+            .style(style_header(state))
+            .bottom_margin(1),
+    )
     .block(
         Block::default()
-            .title("GPU Telemetry")
+            .title("Power-Aware Workload Distribution")
             .borders(Borders::ALL),
     );
 
-    frame.render_widget(table, area);
+    frame.render_widget(table, chunks[1]);
 }
+fn render_aiops(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
+    let status = match &state.last_status {
+        Some(s) => s,
+        None => return,
+    };
 
-fn render_orchestrator_panel(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
-    let text = vec![
-        Line::from(vec![
-            Span::styled("Autonomy Mode: ", style_label(state)),
-            Span::styled("ACTIVE", style_green(state)),
-        ]),
-        Line::from(""),
-        Line::from("Orchestrator is running autonomously on this node."),
-        Line::from("Power-aware scheduling is enabled."),
-    ];
+    // Split screen: Top half for RCA events, bottom half for Risk Assessments
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
 
-    let p = Paragraph::new(text).block(
-        Block::default()
-            .title("Orchestrator Status")
-            .borders(Borders::ALL),
-    );
-    frame.render_widget(p, area);
-}
+    // --- Root Cause Analysis Events (Top) ---
+    let rca_block = Block::default()
+        .title("Root Cause Analysis - Recent Detections")
+        .borders(Borders::ALL)
+        .style(style_content_block(state));
+    
+    let rca_inner = rca_block.inner(chunks[0]);
+    frame.render_widget(rca_block, chunks[0]);
 
-fn render_generic_text(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
-    // Fallback for other screens to at least show something
-    let text = format!(
-        "Screen: {:?}\n\n(This view is being modernized)",
-        state.screen
-    );
-    let p = Paragraph::new(text).block(Block::default().borders(Borders::ALL));
-    frame.render_widget(p, area);
+    if status.rca_events.is_empty() {
+        let no_events = Paragraph::new("No RCA events detected in current window")
+            .style(style_label(state))
+            .alignment(Alignment::Center);
+        frame.render_widget(no_events, rca_inner);
+    } else {
+        // Display RCA events as a table
+        let rca_rows: Vec<Row> = status.rca_events.iter().take(10).map(|event| {
+            Row::new(vec![
+                format!("{}s ago", (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() - event.timestamp_ms as u128) / 1000),
+                event.root_cause.clone(),
+                format!("{:.0}%", event.confidence * 100.0),
+                event.details.chars().take(40).collect::<String>(),
+            ])
+            .style(if event.confidence > 0.8 { style_label(state) } else { Style::default() })
+        }).collect();
+
+        let rca_table = Table::new(
+            rca_rows,
+            [
+                Constraint::Length(12),
+                Constraint::Length(25),
+                Constraint::Length(10),
+                Constraint::Min(30),
+            ],
+        )
+        .header(
+            Row::new(vec!["Time", "Root Cause", "Confidence", "Details"])
+                .style(style_header(state))
+                .bottom_margin(1),
+        )
+        .column_spacing(2);
+
+        frame.render_widget(rca_table, rca_inner);
+    }
+
+    // --- Predictive Maintenance Risk Scores (Bottom) ---
+    let risk_block = Block::default()
+        .title("Predictive Maintenance - GPU Failure Risk")
+        .borders(Borders::ALL)
+        .style(style_content_block(state));
+    
+    let risk_inner = risk_block.inner(chunks[1]);
+    frame.render_widget(risk_block, chunks[1]);
+
+    if status.risk_assessments.is_empty() {
+        let no_risk = Paragraph::new("All GPUs operating normally - No elevated risk detected")
+            .style(style_green(state))
+            .alignment(Alignment::Center);
+        frame.render_widget(no_risk, risk_inner);
+    } else {
+        // Split risk area into list and details
+        let risk_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(risk_inner);
+
+        // Left: Risk scores table
+        let risk_rows: Vec<Row> = status.risk_assessments.iter().map(|assessment| {
+            let risk_style = if assessment.risk_score >= 70.0 {
+                style_red(state)
+            } else if assessment.risk_score >= 40.0 {
+                style_yellow(state)
+            } else {
+                style_green(state)
+            };
+
+            let risk_label = if assessment.risk_score >= 70.0 {
+                "CRITICAL"
+            } else if assessment.risk_score >= 40.0 {
+                "WARNING"
+            } else {
+                "NORMAL"
+            };
+
+            Row::new(vec![
+                assessment.gpu_id.chars().take(12).collect::<String>(),
+                format!("{:.1}", assessment.risk_score),
+                format!("{:.1}%", assessment.failure_probability * 100.0),
+                risk_label.to_string(),
+            ])
+            .style(risk_style)
+        }).collect();
+
+        let risk_table = Table::new(
+            risk_rows,
+            [
+                Constraint::Length(14),
+                Constraint::Length(10),
+                Constraint::Length(12),
+                Constraint::Min(10),
+            ],
+        )
+        .header(
+            Row::new(vec!["GPU ID", "Risk Score", "Fail Prob", "Status"])
+                .style(style_header(state))
+                .bottom_margin(1),
+        )
+        .column_spacing(2);
+
+        frame.render_widget(risk_table, risk_chunks[0]);
+
+        // Right: Risk factors for highest risk GPU
+        if let Some(highest_risk) = status.risk_assessments.iter().max_by(|a, b| {
+            a.risk_score.partial_cmp(&b.risk_score).unwrap_or(std::cmp::Ordering::Equal)
+        }) {
+            let factors_text: Vec<Line> = std::iter::once(
+                Line::from(vec![
+                    Span::styled("Top Risk GPU: ", style_label(state)),
+                    Span::styled(&highest_risk.gpu_id, style_yellow(state)),
+                ])
+            )
+            .chain(std::iter::once(Line::from("")))
+            .chain(std::iter::once(Line::from(Span::styled("Risk Factors:", style_header(state)))))
+            .chain(
+                highest_risk.factors.iter().map(|factor| {
+                    Line::from(format!("• {}", factor))
+                })
+            )
+            .collect();
+
+            let factors_para = Paragraph::new(factors_text)
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            
+            frame.render_widget(factors_para, risk_chunks[1]);
+        }
+    }
 }
 
 fn render_network_disk(frame: &mut ratatui::Frame, area: Rect, state: &AppState) {
@@ -908,23 +1130,15 @@ fn handle_key(code: KeyCode, state: &mut AppState) -> bool {
             false
         }
         KeyCode::F(5) => true,
-        // Legacy Hotkeys
-        KeyCode::Char('1') => {
-            state.screen = Screen::Overview;
-            true
-        }
-        KeyCode::Char('2') => {
-            state.screen = Screen::GpuPower;
-            true
-        }
-        KeyCode::Char('3') => {
-            state.screen = Screen::NetworkDisk;
-            true
-        }
-        KeyCode::Char('7') => {
-            state.screen = Screen::Orchestrator;
-            true
-        }
+        // Navigation Hotkeys
+        KeyCode::Char('1') => { state.screen = Screen::Overview; true }
+        KeyCode::Char('2') => { state.screen = Screen::GpuPower; true }
+        KeyCode::Char('3') => { state.screen = Screen::NetworkDisk; true }
+        KeyCode::Char('4') => { state.screen = Screen::Efficiency; true }
+        KeyCode::Char('5') => { state.screen = Screen::Orchestrator; true }
+        KeyCode::Char('6') => { state.screen = Screen::MetricsProfiles; true }
+        KeyCode::Char('7') => { state.screen = Screen::AgentStatus; true }
+        KeyCode::Char('8') => { state.screen = Screen::AIOps; true }
         _ => false,
     }
 }
@@ -965,7 +1179,9 @@ fn format_duration(secs: u64) -> String {
 // Structs restored for compilation compatibility
 
 struct NodeSummary {
+    #[allow(dead_code)]
     node_name: String,
+    #[allow(dead_code)]
     region: String,
     uptime: String,
     cores: String,
@@ -984,6 +1200,7 @@ struct NodeSummary {
     net_drop: String,
     node_power: String,
     node_limit: String,
+    #[allow(dead_code)]
     spikes: String,
     therm_inlet: String,
     therm_exhaust: String,

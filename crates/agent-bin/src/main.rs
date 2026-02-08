@@ -17,7 +17,7 @@ use console::{run_console};
 use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser, Debug)]
-#[command(name = "esnode-core", about = "GPU-aware host metrics exporter")]
+#[command(name = "esnode-core", version, about = "GPU-aware host metrics exporter")]
 struct Cli {
     /// Optional path to configuration file (TOML). Also read from `ESNODE_CONFIG`.
     #[arg(long, env = "ESNODE_CONFIG")]
@@ -157,7 +157,19 @@ enum Command {
         #[command(subcommand)]
         action: ConfigCommand,
     },
-
+    /// Plan an efficiency profile against the current node status.
+    Plan {
+        /// Path to the efficiency profile (YAML).
+        file: PathBuf,
+    },
+    /// Enforce an efficiency profile (Apply actions).
+    Apply {
+        /// Path to the efficiency profile (YAML).
+        file: PathBuf,
+        /// Skip interactive confirmation.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -244,6 +256,14 @@ async fn main() -> Result<()> {
             ConfigCommand::Show => command_config_show(&config_path, &config),
             ConfigCommand::Set { key_value } => command_config_set(&config_path, key_value),
         },
+        Command::Plan { file } => {
+            let client = AgentClient::new(&config.listen_address);
+            command_plan(&client, file)
+        },
+        Command::Apply { file, yes } => {
+            let client = AgentClient::new(&config.listen_address);
+            command_apply(&client, file, *yes)
+        },
     }
 }
 
@@ -299,6 +319,10 @@ fn cli_to_overrides(cli: &Cli) -> Result<ConfigOverrides> {
         local_tsdb_max_disk_mb: cli.local_tsdb_max_disk_mb,
         log_level: parse_log_level(cli.log_level.as_deref())?,
         orchestrator,
+        efficiency_profile_path: None,
+        enforcement_mode: None,
+        enforcement_interval: None,
+        dampening_interval: None,
     })
 }
 
@@ -523,11 +547,131 @@ fn apply_config_kv(config: &mut AgentConfig, key: &str, val: &str) -> Result<()>
         "enable_mcp" => config.enable_mcp = val.parse()?,
         "enable_app" => config.enable_app = val.parse()?,
         "enable_rack_thermals" => config.enable_rack_thermals = val.parse()?,
-
         "node_power_envelope_watts" => config.node_power_envelope_watts = Some(val.parse()?),
         "log_level" => config.log_level = parse_log_level(Some(val))?.unwrap(),
         other => bail!("unknown config key {other}"),
     }
+    Ok(())
+}
+
+fn command_plan(client: &AgentClient, profile_path: &Path) -> Result<()> {
+    let contents = fs::read_to_string(profile_path)
+        .with_context(|| format!("failed to read profile {}", profile_path.display()))?;
+    
+    let profile: agent_core::policy::EfficiencyProfile = serde_yaml::from_str(&contents)
+        .with_context(|| "failed to parse efficiency profile YAML")?;
+
+    println!("Refreshing state from agent at {}...", client.base_url());
+    let status = client.fetch_status()
+        .with_context(|| "failed to fetch current status from agent")?;
+
+    println!("Analyzed {} GPUs.", status.gpus.len());
+    
+    let result = profile.plan(&status);
+    
+    println!("\nPlan: {} policies to check for profile '{}'.\n", result.matched_policies.len(), result.profile_name);
+    
+    let mut violations = 0;
+    
+    for plan in result.matched_policies {
+        let symbol = match plan.status {
+            agent_core::policy::PlanStatus::Satisfied => "✅",
+            agent_core::policy::PlanStatus::Violated => "❌",
+            agent_core::policy::PlanStatus::Skipped => "⏭️",
+        };
+        
+        println!("{} Policy \"{}\" on {}:", symbol, plan.policy_name, plan.target_resource);
+        println!("    Current: {} | Limit: {}", plan.current_value, plan.threshold);
+        
+        if let Some(action) = plan.computed_action.clone() {
+            println!("    -> PLAN ACTION: {}", action);
+            violations += 1;
+        }
+        println!();
+    }
+    
+    if violations > 0 {
+        println!("⚠️  Plan found {} violations that would be corrected.", violations);
+    } else {
+        println!("✨ No violations found. Cluster is efficient.");
+    }
+
+    Ok(())
+}
+
+fn command_apply(client: &AgentClient, profile_path: &Path, yes: bool) -> Result<()> {
+    let contents = fs::read_to_string(profile_path)
+        .with_context(|| format!("failed to read profile {}", profile_path.display()))?;
+    
+    // We need to import the EfficiencyProfile struct. Since agent-core exposes it in policy
+    // but agent-bin depends on agent-core, we can access it.
+    let profile: agent_core::policy::EfficiencyProfile = serde_yaml::from_str(&contents)
+        .with_context(|| "failed to parse efficiency profile YAML")?;
+
+    println!("Refreshing state from agent at {}...", client.base_url());
+    let status = client.fetch_status()
+        .with_context(|| "failed to fetch current status from agent")?;
+
+    println!("Analyzed {} GPUs.", status.gpus.len());
+    
+    let result = profile.plan(&status);
+    
+    // Filter for violations. Note: plan.status is an Enum so we need to match carefully.
+    let violations: Vec<_> = result.matched_policies.iter().filter(|p| {
+        matches!(p.status, agent_core::policy::PlanStatus::Violated)
+    }).collect();
+
+    if violations.is_empty() {
+        println!("✨ No violations found in profile '{}'. Nothing to apply.", profile.metadata.name);
+        return Ok(());
+    }
+
+    println!("\n⚠️  Found {} violations that require action:", violations.len());
+    for plan in &violations {
+        println!("❌ Policy \"{}\" on {}:", plan.policy_name, plan.target_resource);
+        println!("    Current: {} | Limit: {}", plan.current_value, plan.threshold);
+        if let Some(action) = &plan.computed_action {
+             println!("    -> PROPOSED ACTION: {}", action);
+        }
+        println!();
+    }
+    
+    if !yes {
+        use std::io::{self, Write};
+        print!("\nDo you want to enforce these actions? [y/N] ");
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        if input.trim().to_lowercase() != "y" {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
+    println!("Applying efficiency profile '{}'...", profile.metadata.name);
+    
+    // Instantiate Enforcer
+    let enforcer = agent_core::control::Enforcer::new();
+    let mut applied_count = 0;
+    
+    for plan in violations {
+        // Find defining policy
+        if let Some(policy) = profile.policies.iter().find(|p| p.name == plan.policy_name) {
+             match enforcer.apply_action(&plan.target_resource, &policy.action) {
+                Ok(msg) => {
+                    println!("✅ Applied on {}: {}", plan.target_resource, msg);
+                    applied_count += 1;
+                },
+                Err(e) => {
+                    println!("❌ Failed to apply policy '{}' on {}: {}", plan.policy_name, plan.target_resource, e);
+                }
+             }
+        } else {
+            println!("❌ Error: Could not find policy definition for '{}'", plan.policy_name);
+        }
+    }
+
+    println!("\nSummary: {} actions applied successfully.", applied_count);
     Ok(())
 }
 

@@ -64,45 +64,43 @@ pub mod field {
 pub unsafe fn pcie_ext_counters(device: nvmlDevice_t) -> Result<PcieExt, NvmlExtError> {
     // nvmlDeviceGetPcieReplayCounter is already available in wrapper; here we try best-effort extras.
     // As nvml-wrapper does not expose these, we attempt direct bindings when available; otherwise return NotSupported.
-    unsafe {
-        let lib = libloading::Library::new("libnvidia-ml.so.1")
-            .map_err(|_| NvmlExtError::NotSupported)?;
+    let lib = libloading::Library::new("libnvidia-ml.so.1")
+        .map_err(|_| NvmlExtError::NotSupported)?;
 
-        type NvmlDeviceGetPcieStats = unsafe extern "C" fn(
-            device: nvmlDevice_t,
-            counter: u32,
-            value: *mut u32,
-        ) -> nvmlReturn_t;
-        type NvmlDeviceGetPcieReplayCounter =
-            unsafe extern "C" fn(device: nvmlDevice_t, value: *mut u32) -> nvmlReturn_t;
+    type NvmlDeviceGetPcieStats = unsafe extern "C" fn(
+        device: nvmlDevice_t,
+        counter: u32,
+        value: *mut u32,
+    ) -> nvmlReturn_t;
+    type NvmlDeviceGetPcieReplayCounter =
+        unsafe extern "C" fn(device: nvmlDevice_t, value: *mut u32) -> nvmlReturn_t;
 
-        let get_pcie_stats: libloading::Symbol<NvmlDeviceGetPcieStats> = lib
-            .get(b"nvmlDeviceGetPcieStats")
-            .map_err(|_| NvmlExtError::NotSupported)?;
-        let get_pcie_replay_counter: libloading::Symbol<NvmlDeviceGetPcieReplayCounter> = lib
-            .get(b"nvmlDeviceGetPcieReplayCounter")
-            .map_err(|_| NvmlExtError::NotSupported)?;
+    let get_pcie_stats: libloading::Symbol<NvmlDeviceGetPcieStats> = lib
+        .get(b"nvmlDeviceGetPcieStats")
+        .map_err(|_| NvmlExtError::NotSupported)?;
+    let get_pcie_replay_counter: libloading::Symbol<NvmlDeviceGetPcieReplayCounter> = lib
+        .get(b"nvmlDeviceGetPcieReplayCounter")
+        .map_err(|_| NvmlExtError::NotSupported)?;
 
-        let mut corr: u32 = 0;
-        let mut atomic: u32 = 0;
-        let corr_ret = get_pcie_stats(
-            device,
-            nvmlPcieUtilCounter_enum_NVML_PCIE_UTIL_TX_BYTES,
-            &raw mut corr,
-        );
-        let atomic_ret = get_pcie_replay_counter(device, &raw mut atomic);
-        let mut out = PcieExt::default();
-        if corr_ret == nvmlReturn_enum_NVML_SUCCESS {
-            out.correctable_errors = Some(u64::from(corr));
-        }
-        if atomic_ret == nvmlReturn_enum_NVML_SUCCESS {
-            out.atomic_requests = Some(u64::from(atomic));
-        }
-        if out.correctable_errors.is_none() && out.atomic_requests.is_none() {
-            return Err(NvmlExtError::NotSupported);
-        }
-        Ok(out)
+    let mut corr: u32 = 0;
+    let mut atomic: u32 = 0;
+    let corr_ret = get_pcie_stats(
+        device,
+        nvmlPcieUtilCounter_enum_NVML_PCIE_UTIL_TX_BYTES,
+        &raw mut corr,
+    );
+    let atomic_ret = get_pcie_replay_counter(device, &raw mut atomic);
+    let mut out = PcieExt::default();
+    if corr_ret == nvmlReturn_enum_NVML_SUCCESS {
+        out.correctable_errors = Some(u64::from(corr));
     }
+    if atomic_ret == nvmlReturn_enum_NVML_SUCCESS {
+        out.atomic_requests = Some(u64::from(atomic));
+    }
+    if out.correctable_errors.is_none() && out.atomic_requests.is_none() {
+        return Err(NvmlExtError::NotSupported);
+    }
+    Ok(out)
 }
 
 #[cfg(all(feature = "gpu-nvml-ffi-ext", feature = "gpu"))]
@@ -121,34 +119,32 @@ pub unsafe fn get_field_values(
     device: nvmlDevice_t,
     field_ids: &[u32],
 ) -> Result<FieldValues, NvmlExtError> {
-    unsafe {
-        let lib = libloading::Library::new("libnvidia-ml.so.1")
-            .map_err(|_| NvmlExtError::NotSupported)?;
+    let lib = libloading::Library::new("libnvidia-ml.so.1")
+        .map_err(|_| NvmlExtError::NotSupported)?;
 
-        type NvmlDeviceGetFieldValues = unsafe extern "C" fn(
-            device: nvmlDevice_t,
-            values_count: u32,
-            values: *mut nvmlFieldValue_t,
-        ) -> nvmlReturn_t;
+    type NvmlDeviceGetFieldValues = unsafe extern "C" fn(
+        device: nvmlDevice_t,
+        values_count: u32,
+        values: *mut nvmlFieldValue_t,
+    ) -> nvmlReturn_t;
 
-        let get_field_values_fn: libloading::Symbol<NvmlDeviceGetFieldValues> = lib
-            .get(b"nvmlDeviceGetFieldValues")
-            .map_err(|_| NvmlExtError::NotSupported)?;
+    let get_field_values_fn: libloading::Symbol<NvmlDeviceGetFieldValues> = lib
+        .get(b"nvmlDeviceGetFieldValues")
+        .map_err(|_| NvmlExtError::NotSupported)?;
 
-        let mut fields: Vec<nvmlFieldValue_t> = vec![std::mem::zeroed(); field_ids.len()];
-        for (i, f) in field_ids.iter().enumerate() {
-            fields[i].fieldId = *f;
-        }
-        let ret = get_field_values_fn(device, fields.len() as u32, fields.as_mut_ptr());
-        if ret != nvmlReturn_enum_NVML_SUCCESS {
-            return Err(NvmlExtError::NvmlReturn(ret as i32));
-        }
-        let mut out = FieldValues::default();
-        for f in fields {
-            out.values.push((f.fieldId, f.value.sllVal));
-        }
-        Ok(out)
+    let mut fields: Vec<nvmlFieldValue_t> = vec![std::mem::zeroed(); field_ids.len()];
+    for (i, f) in field_ids.iter().enumerate() {
+        fields[i].fieldId = *f;
     }
+    let ret = get_field_values_fn(device, fields.len() as u32, fields.as_mut_ptr());
+    if ret != nvmlReturn_enum_NVML_SUCCESS {
+        return Err(NvmlExtError::NvmlReturn(ret as i32));
+    }
+    let mut out = FieldValues::default();
+    for f in fields {
+        out.values.push((f.fieldId, f.value.sllVal));
+    }
+    Ok(out)
 }
 
 /// Placeholder event registration for MIG/GPU handles. Caller should fall back gracefully.
@@ -161,22 +157,30 @@ pub const fn register_extended_events(
 }
 
 #[cfg(not(all(feature = "gpu-nvml-ffi-ext", feature = "gpu")))]
-pub fn pcie_ext_counters(_device: *mut std::ffi::c_void) -> Result<PcieExt, NvmlExtError> {
+/// # Safety
+/// This is a stub that always returns an error.
+pub unsafe fn pcie_ext_counters(_device: *mut std::ffi::c_void) -> Result<PcieExt, NvmlExtError> {
     Err(NvmlExtError::NotSupported)
 }
 #[cfg(not(all(feature = "gpu-nvml-ffi-ext", feature = "gpu")))]
-pub fn nvswitch_ext_counters(_device: *mut std::ffi::c_void) -> Result<NvSwitchExt, NvmlExtError> {
+/// # Safety
+/// This is a stub that always returns an error.
+pub unsafe fn nvswitch_ext_counters(_device: *mut std::ffi::c_void) -> Result<NvSwitchExt, NvmlExtError> {
     Err(NvmlExtError::NotSupported)
 }
 #[cfg(not(all(feature = "gpu-nvml-ffi-ext", feature = "gpu")))]
-pub fn get_field_values(
+/// # Safety
+/// This is a stub that always returns an error.
+pub unsafe fn get_field_values(
     _device: *mut std::ffi::c_void,
     _field_ids: &[u32],
 ) -> Result<FieldValues, NvmlExtError> {
     Err(NvmlExtError::NotSupported)
 }
 #[cfg(not(all(feature = "gpu-nvml-ffi-ext", feature = "gpu")))]
-pub fn register_extended_events(
+/// # Safety
+/// This is a stub that always returns an error.
+pub unsafe fn register_extended_events(
     _device: *mut std::ffi::c_void,
     _event_set: *mut std::ffi::c_void,
 ) -> Result<(), NvmlExtError> {
