@@ -50,7 +50,7 @@ Comprehensive observability across the entire AI compute stack.
 ## 🖥️ 4. Enterprise-Grade Operations
 Designed for security, scale, and ease of use in production environments.
 
-### **Modern TUI Dashboard (AS/400-Inspired)**
+### **Modern TUI Dashboard**
 - **Cloud-Console Grade UI**: A professional terminal interface for high-density monitoring without needing a web browser.
 - **Dedicated AIOps View (Hotkey '8')**: Instant access to real-time RCA detections and predictive risk scores.
 - **One-Shot Diagnostics (Hotkey '7')**: Rapid node health check for quick troubleshooting.
