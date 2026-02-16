@@ -16,6 +16,8 @@ use nvml_wrapper::{
 use prometheus::GaugeVec;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use crate::collectors::pue::PowerAggregator;
+use crate::state::StatusState;
 #[cfg(feature = "gpu")]
 use std::time::Instant;
 #[cfg(all(feature = "gpu", target_os = "linux"))]

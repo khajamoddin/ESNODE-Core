@@ -4,6 +4,8 @@ use async_trait::async_trait;
 use crate::metrics::MetricsRegistry;
 
 pub mod app;
+#[cfg(feature = "ebpf")]
+pub mod ebpf;
 pub mod cpu;
 pub mod disk;
 pub mod gpu;
@@ -11,6 +13,8 @@ pub mod memory;
 pub mod network;
 pub mod numa;
 pub mod power;
+pub mod protocol_runner;
+pub mod pue;
 
 #[async_trait]
 pub trait Collector: Send {

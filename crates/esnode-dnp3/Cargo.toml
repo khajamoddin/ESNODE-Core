@@ -1,0 +1,14 @@
+[package]
+name = "esnode-dnp3"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+agent-core = { version = "0.1.0", path = "../agent-core" }
+anyhow = "1.0.101"
+async-trait = "0.1.89"
+bytes = "1.11.1"
+crc = "3.4.0"
+futures = "0.3.31"
+tokio = "1.49.0"
+tokio-util = { version = "0.7.18", features = ["codec", "io"] }

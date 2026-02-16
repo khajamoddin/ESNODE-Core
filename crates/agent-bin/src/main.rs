@@ -50,6 +50,10 @@ struct Cli {
     /// Enable or disable network collector
     #[arg(long, env = "ESNODE_ENABLE_NETWORK")]
     enable_network: Option<bool>,
+    
+    /// Enable or disable eBPF high-frequency performance collector
+    #[arg(long, env = "ESNODE_ENABLE_EBPF")]
+    enable_ebpf: Option<bool>,
 
     /// Enable or disable GPU collector
     #[arg(long, env = "ESNODE_ENABLE_GPU")]
@@ -113,7 +117,7 @@ struct Cli {
     #[arg(long, env = "ESNODE_ENABLE_APP")]
     pub enable_app: Option<bool>,
 
-    /// URL for application metrics (e.g. <http://localhost:8000/metrics>)
+    /// URL for application metrics (e.g. http://localhost:8000/metrics)
     #[arg(long, env = "ESNODE_APP_METRICS_URL")]
     pub app_metrics_url: Option<String>,
 
@@ -205,14 +209,12 @@ enum MetricSet {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let config_path = resolve_config_path(&cli);
-    let mut config = AgentConfig::default();
+    
+    // Load base config (Defaults + Env)
+    let mut config = agent_core::config::load_config(Some(config_path.clone()))
+        .context("failed to load base configuration")?;
 
-    if config_path.exists() {
-        let file_overrides = load_config_file(&config_path)
-            .with_context(|| format!("failed to read config file {}", config_path.display()))?;
-        config.apply_overrides(file_overrides);
-    }
-
+    // Apply CLI overrides which take precedence
     let cli_overrides = cli_to_overrides(&cli)?;
     config.apply_overrides(cli_overrides);
 
@@ -220,7 +222,11 @@ async fn main() -> Result<()> {
         Command::Daemon => {
             init_tracing(&config);
             tracing::info!("Starting ESNODE-Core with config: {:?}", config);
-            let agent = Agent::new(config)?;
+            
+            // Instantiate drivers from config
+            let drivers = instantiate_drivers(&config)?;
+            
+            let agent = Agent::new(config, drivers)?;
             agent.run().await
         }
         Command::Status => {
@@ -285,7 +291,7 @@ fn load_config_file(path: &Path) -> Result<ConfigOverrides> {
 
 fn cli_to_overrides(cli: &Cli) -> Result<ConfigOverrides> {
     let orchestrator = if cli.enable_orchestrator.unwrap_or(false) {
-        Some(esnode_orchestrator::OrchestratorConfig {
+        Some(agent_core::config::OrchestratorConfig {
             enabled: true,
             ..Default::default()
         })
@@ -300,12 +306,13 @@ fn cli_to_overrides(cli: &Cli) -> Result<ConfigOverrides> {
         enable_memory: cli.enable_memory,
         enable_disk: cli.enable_disk,
         enable_network: cli.enable_network,
+        enable_ebpf: cli.enable_ebpf,
         enable_gpu: cli.enable_gpu,
         enable_gpu_amd: cli.enable_gpu_amd,
         enable_gpu_mig: cli.enable_gpu_mig,
         enable_gpu_events: cli.enable_gpu_events,
-        gpu_visible_devices: cli.gpu_visible_devices.clone().map(Some),
-        mig_config_devices: cli.mig_config_devices.clone().map(Some),
+        gpu_visible_devices: cli.gpu_visible_devices.clone(),
+        mig_config_devices: cli.mig_config_devices.clone(),
         k8s_mode: cli.k8s_mode,
         enable_power: cli.enable_power,
         enable_mcp: None,
@@ -349,6 +356,217 @@ fn parse_log_level(input: Option<&str>) -> Result<Option<LogLevel>> {
     } else {
         Ok(None)
     }
+}
+
+fn instantiate_drivers(config: &AgentConfig) -> Result<Vec<Box<dyn agent_core::drivers::Driver>>> {
+    use agent_core::drivers::{Driver, SensorType};
+    use std::net::SocketAddr;
+    
+    let mut drivers: Vec<Box<dyn Driver>> = Vec::new();
+    
+    for driver_cfg in &config.drivers {
+        match driver_cfg.protocol.as_str() {
+            "modbus" => {
+                let addr: SocketAddr = driver_cfg.target.parse()
+                    .with_context(|| format!("Invalid Modbus target address: {}", driver_cfg.target))?;
+                
+                let slave_id = driver_cfg.params.get("slave_id")
+                    .and_then(|s| s.parse::<u8>().ok())
+                    .unwrap_or(1);
+                
+                let mut register_mappings = Vec::new();
+                
+                // Parse registers from params (format: "40001:temperature:2:0.1")
+                if let Some(register_str) = driver_cfg.params.get("registers") {
+                    for reg_def in register_str.split(',') {
+                        let parts: Vec<&str> = reg_def.split(':').collect();
+                        if parts.len() >= 4 {
+                            let address = parts[0].parse::<u16>()?;
+                            let sensor_type = match parts[1].to_lowercase().as_str() {
+                                "temperature" => SensorType::Temperature,
+                                "pressure" => SensorType::Pressure,
+                                "voltage" => SensorType::Voltage,
+                                "current" => SensorType::Current,
+                                "power" => SensorType::Power,
+                                _ => SensorType::Other,
+                            };
+                            let count = parts[2].parse::<u16>()?;
+                            let scale = parts[3].parse::<f64>()?;
+                            
+                            register_mappings.push(esnode_modbus::RegisterMapping {
+                                address,
+                                count,
+                                sensor_type,
+                                unit: "raw".to_string(),
+                                scale,
+                            });
+                        }
+                    }
+                }
+                
+                // Default mapping if none specified
+                if register_mappings.is_empty() {
+                    register_mappings.push(esnode_modbus::RegisterMapping {
+                        address: 40001,
+                        count: 2,
+                        sensor_type: SensorType::Temperature,
+                        unit: "celsius".to_string(),
+                        scale: 0.1,
+                    });
+                }
+                
+                drivers.push(Box::new(esnode_modbus::ModbusDriver::new(
+                    driver_cfg.id.clone(),
+                    addr,
+                    slave_id,
+                    register_mappings,
+                )));
+            }
+            "dnp3" => {
+                let addr: SocketAddr = driver_cfg.target.parse()
+                    .with_context(|| format!("Invalid DNP3 target address: {}", driver_cfg.target))?;
+                
+                let local_addr = driver_cfg.params.get("local_addr")
+                    .and_then(|s| s.parse::<u16>().ok())
+                    .unwrap_or(1);
+                    
+                let remote_addr = driver_cfg.params.get("remote_addr")
+                    .and_then(|s| s.parse::<u16>().ok())
+                    .unwrap_or(1024);
+                
+                let dnp3_config = esnode_dnp3::Dnp3Config {
+                    local_addr,
+                    remote_addr,
+                    integrity_interval_ms: 5000,
+                };
+                
+                drivers.push(Box::new(esnode_dnp3::Dnp3Driver::new(
+                    driver_cfg.id.clone(),
+                    addr,
+                    dnp3_config,
+                )));
+            }
+            "snmp" => {
+                let addr: SocketAddr = driver_cfg.target.parse()
+                    .with_context(|| format!("Invalid SNMP target address: {}", driver_cfg.target))?;
+                
+                let community = driver_cfg.params.get("community")
+                    .unwrap_or(&"public".to_string())
+                    .clone();
+                    
+                let oids = driver_cfg.params.get("oids")
+                    .map(|s| s.split(',').map(|o| o.trim().to_string()).collect())
+                    .unwrap_or_else(|| vec!["1.3.6.1.2.1.1.1.0".to_string()]);
+                
+                let snmp_config = esnode_snmp::SnmpConfig {
+                    target: addr,
+                    community,
+                    oids,
+                };
+                
+                drivers.push(Box::new(esnode_snmp::SnmpDriver::new(
+                    driver_cfg.id.clone(),
+                    snmp_config,
+                )));
+            }
+            "mqtt" => {
+                let broker = driver_cfg.target.split(':').next()
+                    .unwrap_or("localhost")
+                    .to_string();
+                
+                let port = driver_cfg.target.split(':').nth(1)
+                    .and_then(|p| p.parse::<u16>().ok())
+                    .unwrap_or(1883);
+                
+                let client_id = driver_cfg.params.get("client_id")
+                    .cloned()
+                    .unwrap_or_else(|| format!("esnode-{}", driver_cfg.id));
+                
+                let username = driver_cfg.params.get("username").cloned();
+                let password = driver_cfg.params.get("password").cloned();
+                
+                let topics = driver_cfg.params.get("topics")
+                    .map(|s| s.split(',').map(|t| t.trim().to_string()).collect())
+                    .unwrap_or_else(|| vec!["sensors/#".to_string()]);
+                
+                let qos = driver_cfg.params.get("qos")
+                    .and_then(|s| s.parse::<u8>().ok())
+                    .unwrap_or(1);
+                
+                // Parse topic mappings from params
+                let mut topic_mappings = Vec::new();
+                
+                // Format: "mappings=topic:sensor_type:unit:value_path:scale,..."
+                if let Some(mappings_str) = driver_cfg.params.get("mappings") {
+                    for mapping_def in mappings_str.split(',') {
+                        let parts: Vec<&str> = mapping_def.split(':').collect();
+                        if parts.len() >= 4 {
+                            let sensor_type = match parts[1].to_lowercase().as_str() {
+                                "temperature" => SensorType::Temperature,
+                                "pressure" => SensorType::Pressure,
+                                "voltage" => SensorType::Voltage,
+                                "current" => SensorType::Current,
+                                "power" => SensorType::Power,
+                                "energy" => SensorType::Energy,
+                                "frequency" => SensorType::Frequency,
+                                _ => SensorType::Other,
+                            };
+                            
+                            let scale = parts.get(4)
+                                .and_then(|s| s.parse::<f64>().ok())
+                                .unwrap_or(1.0);
+                            
+                            topic_mappings.push(esnode_mqtt::TopicMapping::new(
+                                parts[0].to_string(),
+                                sensor_type,
+                                parts[2].to_string(),
+                                parts[3].to_string(),
+                                scale,
+                            ));
+                        }
+                    }
+                }
+                
+                // Default mapping if none specified
+                if topic_mappings.is_empty() {
+                    topic_mappings.push(esnode_mqtt::TopicMapping::new(
+                        "sensors/#".to_string(),
+                        SensorType::Temperature,
+                        "celsius".to_string(),
+                        "value".to_string(),
+                        1.0,
+                    ));
+                }
+                
+                let mqtt_config = esnode_mqtt::MqttConfig {
+                    broker,
+                    port,
+                    client_id,
+                    username,
+                    password,
+                    topics,
+                    qos,
+                    use_tls: driver_cfg.params.get("use_tls")
+                        .and_then(|s| s.parse::<bool>().ok())
+                        .unwrap_or(false),
+                    ca_cert_path: driver_cfg.params.get("ca_cert_path").cloned(),
+                    client_cert_path: driver_cfg.params.get("client_cert_path").cloned(),
+                    client_key_path: driver_cfg.params.get("client_key_path").cloned(),
+                    topic_mappings,
+                };
+                
+                drivers.push(Box::new(esnode_mqtt::MqttDriver::new(
+                    driver_cfg.id.clone(),
+                    mqtt_config,
+                )));
+            }
+            unknown => {
+                bail!("Unknown driver protocol: {}", unknown);
+            }
+        }
+    }
+    
+    Ok(drivers)
 }
 
 fn init_tracing(config: &AgentConfig) {
@@ -674,7 +892,6 @@ fn command_apply(client: &AgentClient, profile_path: &Path, yes: bool) -> Result
     println!("\nSummary: {} actions applied successfully.", applied_count);
     Ok(())
 }
-
 
 
 

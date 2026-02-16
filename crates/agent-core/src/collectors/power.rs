@@ -9,6 +9,7 @@ use sysinfo::{ComponentExt, System, SystemExt};
 use tracing::{debug, warn};
 
 use crate::collectors::Collector;
+use crate::collectors::pue::PowerAggregator;
 use crate::metrics::MetricsRegistry;
 use crate::state::{StatusState, TemperatureReading};
 
@@ -44,10 +45,11 @@ pub struct PowerCollector {
     envelope_watts: Option<f64>,
     last_node_power_watts: Option<f64>,
     last_node_ts: Option<Instant>,
+    aggregator: Option<PowerAggregator>,
 }
 
 impl PowerCollector {
-    pub fn new(status: StatusState, envelope_watts: Option<f64>) -> Self {
+    pub fn new(status: StatusState, envelope_watts: Option<f64>, aggregator: Option<PowerAggregator>) -> Self {
         let rapl_zones = discover_rapl();
         let node_power_candidates = discover_node_power();
         Self {
@@ -60,6 +62,7 @@ impl PowerCollector {
             envelope_watts,
             last_node_power_watts: None,
             last_node_ts: None,
+            aggregator,
         }
     }
 }

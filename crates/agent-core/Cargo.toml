@@ -15,6 +15,8 @@ gpu = ["nvml-wrapper"]
 gpu-nvml-ffi = ["nvml-wrapper-sys"]
 # Extended NVML FFI for NVSwitch/PCIe/event introspection (scaffolding only; guarded).
 gpu-nvml-ffi-ext = ["gpu-nvml-ffi"]
+# eBPF Performance Layer
+ebpf = ["aya", "aya-log", "nix"]
 
 [dependencies]
 anyhow = "1"
@@ -36,6 +38,9 @@ tokio-stream = "0.1"
 futures = "0.3"
 libc = "0.2"
 libloading = "0.8"
+parking_lot = "0.12"
+toml = "0.9.11"
+config = "0.15.19"
 
 [dependencies.nvml-wrapper]
 version = "0.10"
@@ -47,3 +52,8 @@ optional = true
 
 [dependencies.esnode-orchestrator]
 path = "../../ESNODE-Orchestrator"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = { version = "0.11", features = ["async_tokio"], optional = true }
+aya-log = { version = "0.1", optional = true }
+nix = { version = "0.26", features = ["resource", "user", "hostname", "process"], optional = true }

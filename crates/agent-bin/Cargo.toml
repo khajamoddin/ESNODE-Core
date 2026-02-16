@@ -25,6 +25,10 @@ toml = "0.8"
 tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+esnode-modbus = { version = "0.1.0", path = "../esnode-modbus" }
+esnode-dnp3 = { version = "0.1.0", path = "../esnode-dnp3" }
+esnode-snmp = { version = "0.1.0", path = "../esnode-snmp" }
+esnode-mqtt = { version = "0.1.0", path = "../esnode-mqtt" }
 
 [dev-dependencies]
 assert_cmd = "2"

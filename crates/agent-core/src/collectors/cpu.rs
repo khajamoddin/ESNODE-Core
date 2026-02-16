@@ -19,25 +19,28 @@ struct CpuStat {
 use crate::collectors::Collector;
 use crate::metrics::MetricsRegistry;
 use crate::state::StatusState;
+use crate::collectors::pue::PowerAggregator;
 
 pub struct CpuCollector {
     system: System,
-    status: StatusState,
+    _status: StatusState,
     prev: Option<CpuStat>,
     ticks_per_sec: f64,
+    _aggregator: Option<PowerAggregator>,
 }
 
 impl CpuCollector {
-    pub fn new(status: StatusState) -> Self {
+    pub fn new(status: StatusState, aggregator: Option<PowerAggregator>) -> Self {
         // Only keep CPU-related refresh data to minimize overhead.
         let refresh = RefreshKind::new().with_cpu(CpuRefreshKind::everything());
         let system = System::new_with_specifics(refresh);
         let tps = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
         Self {
             system,
-            status,
+            _status: status,
             prev: None,
             ticks_per_sec: if tps > 0.0 { tps } else { 100.0 },
+            _aggregator: aggregator,
         }
     }
 }
@@ -70,7 +73,7 @@ impl Collector for CpuCollector {
         };
 
         let uptime_seconds = Some(self.system.uptime());
-        self.status.set_cpu_summary(
+        self._status.set_cpu_summary(
             Some(cores),
             avg_util,
             load,

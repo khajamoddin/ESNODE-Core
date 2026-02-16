@@ -1,306 +1,268 @@
-// ESNODE | Source Available BUSL-1.1 | Copyright (c) 2024 Estimatedstocks AB
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct OrchestratorConfig {
+    pub enabled: bool,
+    pub token: Option<String>,
+    pub allow_public: bool,
+}
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DriverConfig {
+    pub protocol: String, // "modbus", "dnp3", "snmp"
+    pub id: String,
+    pub target: String,
+    #[serde(default)]
+    pub params: HashMap<String, String>,
+}
+
+impl Default for OrchestratorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            token: None,
+            allow_public: false,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+pub enum EnforcementMode {
+    Monitor,
+    Enforce,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub enum LogLevel {
     Error,
     Warn,
-    #[default]
     Info,
     Debug,
     Trace,
 }
 
 impl LogLevel {
-    #[must_use]
-    pub const fn as_tracing(&self) -> tracing::Level {
+    pub fn as_tracing(&self) -> tracing::Level {
         match self {
-            Self::Error => tracing::Level::ERROR,
-            Self::Warn => tracing::Level::WARN,
-            Self::Info => tracing::Level::INFO,
-            Self::Debug => tracing::Level::DEBUG,
-            Self::Trace => tracing::Level::TRACE,
+            LogLevel::Error => tracing::Level::ERROR,
+            LogLevel::Warn => tracing::Level::WARN,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Trace => tracing::Level::TRACE,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum EnforcementMode {
-    #[default]
-    Audit,
-    Enforce,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Global configuration for the ESNODE Agent.
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AgentConfig {
-    pub listen_address: String,
-    #[serde(with = "humantime_serde", alias = "scrape_interval_seconds")]
+    /// Metadata tags identifying this agent (e.g., env=prod, region=us-east).
+    pub tags: HashMap<String, String>,
+
+    /// The interval between metric collection scrapes.
+    /// Default: 100ms. High-frequency telemetry (10ms) requires kernel tuning.
+    #[serde(with = "humantime_serde")]
     pub scrape_interval: Duration,
+    
+    // Collectors - Compute
     pub enable_cpu: bool,
     pub enable_memory: bool,
     pub enable_disk: bool,
     pub enable_network: bool,
+    pub enable_ebpf: bool,
+    
+    // Collectors - GPU
     pub enable_gpu: bool,
-    #[serde(default)]
     pub enable_gpu_amd: bool,
-    pub enable_power: bool,
-    #[serde(default)]
     pub enable_gpu_mig: bool,
-    #[serde(default)]
     pub enable_gpu_events: bool,
-    #[serde(default)]
     pub gpu_visible_devices: Option<String>,
-    #[serde(default)]
     pub mig_config_devices: Option<String>,
-    #[serde(default)]
-    pub k8s_mode: bool,
-    #[serde(default)]
-    pub enable_mcp: bool,
-    #[serde(default)]
-    pub enable_app: bool,
-    #[serde(default)]
-    pub enable_rack_thermals: bool,
-
-    #[serde(default)]
+    
+    // Collectors - Power/Thermal
+    pub enable_power: bool,
     pub node_power_envelope_watts: Option<f64>,
-    #[serde(default)]
-    pub enable_local_tsdb: bool,
-    #[serde(default = "default_local_tsdb_path")]
-    pub local_tsdb_path: String,
-    #[serde(default = "default_local_tsdb_retention_hours")]
-    pub local_tsdb_retention_hours: u64,
-    #[serde(default = "default_local_tsdb_max_disk_mb")]
-    pub local_tsdb_max_disk_mb: u64,
-    pub log_level: LogLevel,
-    #[serde(default)]
-    pub orchestrator: Option<esnode_orchestrator::OrchestratorConfig>,
-    #[serde(default)]
+    pub enable_rack_thermals: bool,
+    
+    // Environment
+    pub k8s_mode: bool,
+    pub enable_mcp: bool, // Mission Control Plane
+    
+    // App Awareness
+    pub enable_app: bool,
     pub app_metrics_url: String,
 
-    // Efficiency as Code
-    #[serde(default)]
-    pub efficiency_profile_path: Option<String>,
-    #[serde(default)]
+    // Networking
+    pub listen_address: String,
+
+    // Local Storage
+    pub enable_local_tsdb: bool,
+    pub local_tsdb_path: String,
+    pub local_tsdb_retention_hours: u64,
+    pub local_tsdb_max_disk_mb: u64,
+
+    // Control Plane
+    pub orchestrator: Option<OrchestratorConfig>,
+    
+    // Policy / Enforcement
+    pub efficiency_profile_path: Option<PathBuf>,
     pub enforcement_mode: EnforcementMode,
-    #[serde(default = "default_enforcement_interval")]
     #[serde(with = "humantime_serde")]
     pub enforcement_interval: Duration,
-    #[serde(default = "default_dampening_interval")]
     #[serde(with = "humantime_serde")]
     pub dampening_interval: Duration,
+
+    // Drivers
+    #[serde(default)]
+    pub drivers: Vec<DriverConfig>,
+
+    // Legacy / Other
+    pub log_level: LogLevel,
 }
 
-impl Default for AgentConfig {
-    fn default() -> Self {
-        Self {
-            listen_address: "0.0.0.0:9100".to_string(),
-            scrape_interval: Duration::from_secs(5),
-            enable_cpu: true,
-            enable_memory: true,
-            enable_disk: true,
-            enable_network: true,
-            enable_gpu: true,
-            enable_gpu_amd: false,
-            enable_power: true,
-            enable_gpu_mig: false,
-            enable_gpu_events: false,
-            gpu_visible_devices: None,
-            mig_config_devices: None,
-            k8s_mode: false,
-            enable_mcp: false,
-            enable_app: false,
-            enable_rack_thermals: false,
-
-            node_power_envelope_watts: None,
-            enable_local_tsdb: true,
-            local_tsdb_path: default_local_tsdb_path(),
-            local_tsdb_retention_hours: default_local_tsdb_retention_hours(),
-            local_tsdb_max_disk_mb: default_local_tsdb_max_disk_mb(),
-            log_level: LogLevel::Info,
-            orchestrator: None,
-
-            app_metrics_url: "http://127.0.0.1:8000/metrics".to_string(),
-            efficiency_profile_path: None,
-            enforcement_mode: EnforcementMode::Audit,
-            enforcement_interval: default_enforcement_interval(),
-            dampening_interval: default_dampening_interval(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+// Minimal ConfigOverrides struct for CLI merging
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ConfigOverrides {
     pub listen_address: Option<String>,
-    #[serde(with = "humantime_serde::option", alias = "scrape_interval_seconds")]
+    #[serde(default, with = "humantime_serde")]
     pub scrape_interval: Option<Duration>,
     pub enable_cpu: Option<bool>,
     pub enable_memory: Option<bool>,
     pub enable_disk: Option<bool>,
     pub enable_network: Option<bool>,
+    pub enable_ebpf: Option<bool>,
     pub enable_gpu: Option<bool>,
     pub enable_gpu_amd: Option<bool>,
-    pub enable_power: Option<bool>,
-    #[serde(default)]
     pub enable_gpu_mig: Option<bool>,
-    #[serde(default)]
     pub enable_gpu_events: Option<bool>,
-    #[serde(default)]
-    pub gpu_visible_devices: Option<Option<String>>,
-    #[serde(default)]
-    pub mig_config_devices: Option<Option<String>>,
-    #[serde(default)]
+    pub gpu_visible_devices: Option<String>,
+    pub mig_config_devices: Option<String>,
     pub k8s_mode: Option<bool>,
-    #[serde(default)]
+    pub enable_power: Option<bool>,
     pub enable_mcp: Option<bool>,
-    #[serde(default)]
     pub enable_app: Option<bool>,
-    #[serde(default)]
+    pub app_metrics_url: Option<String>,
     pub enable_rack_thermals: Option<bool>,
-
-    #[serde(default)]
     pub node_power_envelope_watts: Option<f64>,
-    #[serde(default)]
     pub enable_local_tsdb: Option<bool>,
-    #[serde(default)]
     pub local_tsdb_path: Option<String>,
-    #[serde(default)]
     pub local_tsdb_retention_hours: Option<u64>,
-    #[serde(default)]
     pub local_tsdb_max_disk_mb: Option<u64>,
     pub log_level: Option<LogLevel>,
-    #[serde(default)]
-    pub orchestrator: Option<esnode_orchestrator::OrchestratorConfig>,
-    #[serde(default)]
-    pub app_metrics_url: Option<String>,
-
-    pub efficiency_profile_path: Option<String>,
+    pub orchestrator: Option<OrchestratorConfig>,
+    pub efficiency_profile_path: Option<PathBuf>,
     pub enforcement_mode: Option<EnforcementMode>,
-    #[serde(with = "humantime_serde::option")]
+    #[serde(default, with = "humantime_serde")]
     pub enforcement_interval: Option<Duration>,
-    #[serde(with = "humantime_serde::option")]
+    #[serde(default, with = "humantime_serde")]
     pub dampening_interval: Option<Duration>,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        let mut tags = HashMap::new();
+        tags.insert("env".to_string(), "dev".to_string());
+        
+        Self {
+            tags,
+            scrape_interval: Duration::from_millis(100), // Fast 100ms default
+            
+            enable_cpu: true,
+            enable_memory: true,
+            enable_disk: true,
+            enable_network: true,
+            enable_ebpf: false,
+            
+            enable_gpu: true,
+            enable_gpu_amd: false,
+            enable_gpu_mig: false,
+            enable_gpu_events: true,
+            gpu_visible_devices: None,
+            mig_config_devices: None,
+            
+            enable_power: true,
+            node_power_envelope_watts: None,
+            enable_rack_thermals: false,
+            
+            k8s_mode: false,
+            enable_mcp: false,
+            
+            enable_app: false,
+            app_metrics_url: "http://localhost:8000/metrics".to_string(),
+            
+            listen_address: "0.0.0.0:9100".to_string(),
+            
+            enable_local_tsdb: false,
+            local_tsdb_path: "/tmp/esnode_tsdb".to_string(),
+            local_tsdb_retention_hours: 24,
+            local_tsdb_max_disk_mb: 512,
+            
+            orchestrator: None,
+            
+            efficiency_profile_path: None,
+            enforcement_mode: EnforcementMode::Monitor,
+            enforcement_interval: Duration::from_secs(5),
+            dampening_interval: Duration::from_secs(60),
+            
+            drivers: Vec::new(),
+
+            log_level: LogLevel::Info,
+        }
+    }
 }
 
 impl AgentConfig {
     pub fn apply_overrides(&mut self, overrides: ConfigOverrides) {
-        if let Some(listen_address) = overrides.listen_address {
-            self.listen_address = listen_address;
-        }
-        if let Some(orch) = overrides.orchestrator {
-            self.orchestrator = Some(orch);
-        }
-
-        if let Some(scrape_interval) = overrides.scrape_interval {
-            self.scrape_interval = scrape_interval;
-        }
-        if let Some(enable_cpu) = overrides.enable_cpu {
-            self.enable_cpu = enable_cpu;
-        }
-        if let Some(enable_memory) = overrides.enable_memory {
-            self.enable_memory = enable_memory;
-        }
-        if let Some(enable_disk) = overrides.enable_disk {
-            self.enable_disk = enable_disk;
-        }
-        if let Some(enable_network) = overrides.enable_network {
-            self.enable_network = enable_network;
-        }
-        if let Some(enable_gpu) = overrides.enable_gpu {
-            self.enable_gpu = enable_gpu;
-        }
-        if let Some(enable_gpu_amd) = overrides.enable_gpu_amd {
-            self.enable_gpu_amd = enable_gpu_amd;
-        }
-        if let Some(enable_power) = overrides.enable_power {
-            self.enable_power = enable_power;
-        }
-        if let Some(enable_gpu_mig) = overrides.enable_gpu_mig {
-            self.enable_gpu_mig = enable_gpu_mig;
-        }
-        if let Some(enable_gpu_events) = overrides.enable_gpu_events {
-            self.enable_gpu_events = enable_gpu_events;
-        }
-        if let Some(gpu_visible_devices) = overrides.gpu_visible_devices {
-            self.gpu_visible_devices = gpu_visible_devices;
-        }
-        if let Some(mig_config_devices) = overrides.mig_config_devices {
-            self.mig_config_devices = mig_config_devices;
-        }
-        if let Some(k8s_mode) = overrides.k8s_mode {
-            self.k8s_mode = k8s_mode;
-        }
-        if let Some(enable_mcp) = overrides.enable_mcp {
-            self.enable_mcp = enable_mcp;
-        }
-        if let Some(enable_app) = overrides.enable_app {
-            self.enable_app = enable_app;
-        }
-        if let Some(enable_rack_thermals) = overrides.enable_rack_thermals {
-            self.enable_rack_thermals = enable_rack_thermals;
-        }
-        if let Some(efficiency_profile_path) = overrides.efficiency_profile_path {
-            self.efficiency_profile_path = Some(efficiency_profile_path);
-        }
-        if let Some(enforcement_mode) = overrides.enforcement_mode {
-            self.enforcement_mode = enforcement_mode;
-        }
-        if let Some(enforcement_interval) = overrides.enforcement_interval {
-            self.enforcement_interval = enforcement_interval;
-        }
-        if let Some(dampening_interval) = overrides.dampening_interval {
-            self.dampening_interval = dampening_interval;
-        }
-
-        if let Some(envelope) = overrides.node_power_envelope_watts {
-            self.node_power_envelope_watts = Some(envelope);
-        }
-        if let Some(enable_local_tsdb) = overrides.enable_local_tsdb {
-            self.enable_local_tsdb = enable_local_tsdb;
-        }
-        if let Some(local_tsdb_path) = overrides.local_tsdb_path {
-            self.local_tsdb_path = local_tsdb_path;
-        }
-        if let Some(retention) = overrides.local_tsdb_retention_hours {
-            self.local_tsdb_retention_hours = retention;
-        }
-        if let Some(max_mb) = overrides.local_tsdb_max_disk_mb {
-            self.local_tsdb_max_disk_mb = max_mb;
-        }
-        if let Some(log_level) = overrides.log_level {
-            self.log_level = log_level;
-        }
-        if let Some(url) = overrides.app_metrics_url {
-            self.app_metrics_url = url;
-        }
+        if let Some(v) = overrides.listen_address { self.listen_address = v; }
+        if let Some(v) = overrides.scrape_interval { self.scrape_interval = v; }
+        if let Some(v) = overrides.enable_cpu { self.enable_cpu = v; }
+        if let Some(v) = overrides.enable_memory { self.enable_memory = v; }
+        if let Some(v) = overrides.enable_disk { self.enable_disk = v; }
+        if let Some(v) = overrides.enable_network { self.enable_network = v; }
+        if let Some(v) = overrides.enable_ebpf { self.enable_ebpf = v; }
+        if let Some(v) = overrides.enable_gpu { self.enable_gpu = v; }
+        if let Some(v) = overrides.enable_gpu_amd { self.enable_gpu_amd = v; }
+        if let Some(v) = overrides.enable_gpu_mig { self.enable_gpu_mig = v; }
+        if let Some(v) = overrides.enable_gpu_events { self.enable_gpu_events = v; }
+        if let Some(v) = overrides.gpu_visible_devices { self.gpu_visible_devices = Some(v); }
+        if let Some(v) = overrides.mig_config_devices { self.mig_config_devices = Some(v); }
+        if let Some(v) = overrides.k8s_mode { self.k8s_mode = v; }
+        if let Some(v) = overrides.enable_power { self.enable_power = v; }
+        if let Some(v) = overrides.node_power_envelope_watts { self.node_power_envelope_watts = Some(v); }
+        if let Some(v) = overrides.enable_rack_thermals { self.enable_rack_thermals = v; }
+        if let Some(v) = overrides.enable_mcp { self.enable_mcp = v; }
+        if let Some(v) = overrides.enable_app { self.enable_app = v; }
+        if let Some(v) = overrides.app_metrics_url { self.app_metrics_url = v; }
+        if let Some(v) = overrides.enable_local_tsdb { self.enable_local_tsdb = v; }
+        if let Some(v) = overrides.local_tsdb_path { self.local_tsdb_path = v; }
+        if let Some(v) = overrides.local_tsdb_retention_hours { self.local_tsdb_retention_hours = v; }
+        if let Some(v) = overrides.local_tsdb_max_disk_mb { self.local_tsdb_max_disk_mb = v; }
+        if let Some(v) = overrides.log_level { self.log_level = v; }
+        if let Some(v) = overrides.orchestrator { self.orchestrator = Some(v); }
+        if let Some(v) = overrides.efficiency_profile_path { self.efficiency_profile_path = Some(v); }
+        if let Some(v) = overrides.enforcement_mode { self.enforcement_mode = v; }
+        if let Some(v) = overrides.enforcement_interval { self.enforcement_interval = v; }
+        if let Some(v) = overrides.dampening_interval { self.dampening_interval = v; }
     }
 }
 
-fn default_local_tsdb_path() -> String {
-    if let Ok(path) = std::env::var("XDG_DATA_HOME") {
-        format!("{path}/esnode/tsdb")
-    } else if let Ok(home) = std::env::var("HOME") {
-        format!("{home}/.local/share/esnode/tsdb")
-    } else {
-        "/var/lib/esnode/tsdb".to_string()
+pub fn load_config(path: Option<PathBuf>) -> Result<AgentConfig, config::ConfigError> {
+    let builder = config::Config::builder()
+        .add_source(config::Config::try_from(&AgentConfig::default())?)
+        .add_source(config::Environment::with_prefix("ESNODE"));
+
+    if let Some(p) = path {
+        // Only add file if it exists, otherwise ignore (optional)
+        if p.exists() {
+             return builder.add_source(config::File::from(p)).build()?.try_deserialize();
+        }
     }
-}
-
-const fn default_local_tsdb_retention_hours() -> u64 {
-    48
-}
-
-const fn default_local_tsdb_max_disk_mb() -> u64 {
-    2048
-}
-
-const fn default_enforcement_interval() -> Duration {
-    Duration::from_secs(30)
-}
-
-const fn default_dampening_interval() -> Duration {
-    Duration::from_secs(300)
+    
+    // Fallback if no file provided or file doesn't exist
+    builder.add_source(config::File::with_name("esnode").required(false))
+           .build()?
+           .try_deserialize()
 }

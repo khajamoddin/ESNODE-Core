@@ -1,8 +1,10 @@
 // ESNODE | Source Available BUSL-1.1 | Copyright (c) 2024 Estimatedstocks AB
-mod collectors;
+pub mod telemetry;
 pub mod config;
+mod collectors;
 mod event_worker;
 mod http;
+pub mod drivers;
 pub mod control;
 pub mod metrics;
 pub mod nvml_ext;
@@ -24,6 +26,8 @@ use collectors::{
     memory::MemoryCollector, network::NetworkCollector, numa::NumaCollector, power::PowerCollector,
     Collector,
 };
+#[cfg(feature = "ebpf")]
+use crate::collectors::ebpf::{EbpfCollector, EbpfConfig};
 pub use config::{AgentConfig, ConfigOverrides, LogLevel};
 use http::{build_router, serve, HttpState};
 use metrics::MetricsRegistry;
@@ -43,11 +47,26 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub fn new(config: AgentConfig) -> anyhow::Result<Self> {
+    pub fn new(config: AgentConfig, drivers: Vec<Box<dyn drivers::Driver>>) -> anyhow::Result<Self> {
         let metrics = MetricsRegistry::new()?;
         let healthy = Arc::new(AtomicBool::new(true));
         let status = state::StatusState::new(healthy.clone());
+        let pue_calc = Arc::new(collectors::pue::PueCalculator::new(status.clone()));
+        let power_aggregator = collectors::pue::PowerAggregator::new(pue_calc.clone());
         let mut collectors: Vec<Box<dyn Collector>> = Vec::new();
+
+        if !drivers.is_empty() {
+             info!("Protocol Runner enabled with {} drivers", drivers.len());
+             collectors.push(Box::new(collectors::protocol_runner::ProtocolRunner::new(drivers, status.clone())));
+        }
+
+        // PUE Calculator - Always enabled for facility monitoring
+        info!("PUE Calculator enabled");
+        collectors.push(Box::new(collectors::pue::PueCollectorWrapper { calculator: pue_calc }));
+        metrics
+            .agent_collector_disabled
+            .with_label_values(&["pue"])
+            .set(0.0);
 
         if config.enable_cpu {
             info!("CPU collector enabled");
@@ -59,7 +78,7 @@ impl Agent {
                 .agent_collector_disabled
                 .with_label_values(&["numa"])
                 .set(0.0);
-            collectors.push(Box::new(CpuCollector::new(status.clone())));
+            collectors.push(Box::new(CpuCollector::new(status.clone(), Some(power_aggregator.clone()))));
             collectors.push(Box::new(NumaCollector::new()));
         } else {
             metrics
@@ -140,6 +159,7 @@ impl Agent {
             collectors.push(Box::new(PowerCollector::new(
                 status.clone(),
                 config.node_power_envelope_watts,
+                Some(power_aggregator.clone()),
             )));
         } else {
             metrics
@@ -165,6 +185,30 @@ impl Agent {
                 .with_label_values(&["app"])
                 .set(1.0);
         }
+
+        #[cfg(feature = "ebpf")]
+        if config.enable_ebpf {
+            info!("eBPF Performance collector enabled");
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["ebpf"])
+                .set(0.0);
+            collectors.push(Box::new(EbpfCollector::new(EbpfConfig::default())));
+        } else {
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["ebpf"])
+                .set(1.0);
+        }
+
+        #[cfg(not(feature = "ebpf"))]
+        {
+            metrics
+                .agent_collector_disabled
+                .with_label_values(&["ebpf"])
+                .set(1.0);
+        }
+
         let local_tsdb = if config.enable_local_tsdb {
             info!(
                 "Local TSDB enabled (path={}, retention={}h, max_disk={} MB)",
@@ -247,8 +291,14 @@ impl Agent {
         
         let orchestrator_state_clone = if let Some(orch_config) = &config.orchestrator {
              if orch_config.enabled {
-                let devices = vec![]; 
-                let orchestrator = esnode_orchestrator::Orchestrator::new(devices, orch_config.clone());
+                let devices = vec![];
+                let external_config = esnode_orchestrator::OrchestratorConfig {
+                    enabled: orch_config.enabled,
+                    token: orch_config.token.clone(),
+                    allow_public: orch_config.allow_public,
+                    ..Default::default()
+                };
+                let orchestrator = esnode_orchestrator::Orchestrator::new(devices, external_config);
                 Some(esnode_orchestrator::AppState {
                     orchestrator: std::sync::Arc::new(std::sync::RwLock::new(orchestrator)),
                     token: orch_config.token.clone(),
@@ -428,7 +478,7 @@ impl Agent {
                 let contents = match tokio::fs::read_to_string(profile_path).await {
                     Ok(c) => c,
                     Err(e) => {
-                        warn!("Failed to read efficiency profile at {}: {}", profile_path, e);
+                        warn!("Failed to read efficiency profile at {}: {}", profile_path.display(), e);
                         continue;
                     }
                 };

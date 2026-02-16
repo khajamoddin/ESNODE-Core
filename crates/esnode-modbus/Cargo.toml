@@ -1,0 +1,13 @@
+[package]
+name = "esnode-modbus"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+agent-core = { version = "0.1.0", path = "../agent-core" }
+anyhow = "1.0.101"
+async-trait = "0.1.89"
+tokio = { version = "1.49.0", features = ["full"] }
+tokio-modbus = { version = "0.17.0", features = ["server"] }
+tokio-serial = "5.4.5"
+tracing = "0.1.44"

@@ -1,0 +1,107 @@
+# ESNODE Datacenter Configuration Example
+# This configuration monitors a complete data center facility with:
+# - Modbus (UPS, HVAC)
+# - DNP3 (Substation)
+# - SNMP (Network PDUs, Switches)
+# - MQTT (IoT Environmental Sensors)
+
+# Global agent settings
+listen_address = "0.0.0.0:9100"
+scrape_interval = "5s"
+log_level = "Info"
+
+# Enable all collectors
+enable_cpu = true
+enable_memory = true
+enable_disk = true
+enable_network = true
+enable_gpu = true
+enable_power = true
+
+# === Facility Monitoring Drivers ===
+
+# 1. MODBUS - UPS Monitoring
+[[drivers]]
+protocol = "modbus"
+id = "modbus-ups-1"
+target = "192.168.1.50:502"
+
+[drivers.params]
+slave_id = "1"
+# Format: address:sensor_type:count:scale
+registers = "40001:voltage:2:0.1,40003:current:2:0.01,40005:power:2:1.0,40007:frequency:2:0.01"
+
+# 2. MODBUS - HVAC Chiller
+[[drivers]]
+protocol = "modbus"
+id = "modbus-chiller-1"
+target = "192.168.1.51:502"
+
+[drivers.params]
+slave_id = "1"
+registers = "30001:temperature:2:0.1,30003:pressure:2:0.001,30005:power:2:1.0"
+
+# 3. DNP3 - Electrical Substation
+[[drivers]]
+protocol = "dnp3"
+id = "dnp3-substation"
+target = "192.168.1.100:20000"
+
+[drivers.params]
+local_addr = "1"
+remote_addr = "1024"
+
+# 4. SNMP - Network PDUs (Power Distribution Units)
+[[drivers]]
+protocol = "snmp"
+id = "snmp-pdu-row1"
+target = "192.168.1.200:161"
+
+[drivers.params]
+community = "public"
+# Common PDU OIDs (APC, Raritan, etc.)
+oids = "1.3.6.1.4.1.318.1.1.12.2.3.1.1.2.1,1.3.6.1.4.1.318.1.1.12.2.3.1.1.4.1"
+
+# 5. SNMP - Network Switch
+[[drivers]]
+protocol = "snmp"
+id = "snmp-switch-core"
+target = "192.168.1.201:161"
+
+[drivers.params]
+community = "public"
+# System uptime and interface stats
+oids = "1.3.6.1.2.1.1.3.0,1.3.6.1.2.1.2.2.1.10.1"
+
+# 6. MQTT - Environmental Sensors
+[[drivers]]
+protocol = "mqtt"
+id = "mqtt-environmental"
+target = "iot-broker.datacenter.local:1883"
+
+[drivers.params]
+client_id = "esnode-node01"
+username = "monitoring"
+password = "secure_password"
+topics = "dc1/environmental/#,dc1/security/#,dc1/cooling/#"
+qos = "1"
+# Format: topic:sensor_type:unit:json_path:scale
+mappings = "dc1/environmental/+/temperature:temperature:celsius:value:1.0,dc1/environmental/+/humidity:other:percent:value:1.0,dc1/cooling/+/flowrate:other:lpm:data.flow:1.0,dc1/security/+/door:other:state:open:1.0"
+
+# 7. MQTT - Rack Sensors
+[[drivers]]
+protocol = "mqtt"
+id = "mqtt-rack-sensors"
+target = "iot-broker.datacenter.local:1883"
+
+[drivers.params]
+client_id = "esnode-node01-racks"
+topics = "dc1/racks/#"
+qos = "1"
+mappings = "dc1/racks/+/temp_inlet:temperature:celsius:value:1.0,dc1/racks/+/temp_outlet:temperature:celsius:value:1.0"
+
+# === Node Metadata ===
+[tags]
+datacenter = "dc1"
+location = "us-west-2"
+facility = "primary"

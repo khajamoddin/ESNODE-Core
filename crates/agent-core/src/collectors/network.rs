@@ -23,7 +23,7 @@ struct NetworkSnapshot {
 pub struct NetworkCollector {
     system: System,
     previous: HashMap<String, NetworkSnapshot>,
-    status: StatusState,
+    _status: StatusState,
     prev_instant: Option<std::time::Instant>,
     prev_tcp_retrans: Option<u64>,
 }
@@ -34,7 +34,7 @@ impl NetworkCollector {
         Self {
             system,
             previous: HashMap::new(),
-            status,
+            _status: status,
             prev_instant: None,
             prev_tcp_retrans: None,
         }
@@ -167,17 +167,17 @@ impl Collector for NetworkCollector {
             } else {
                 None
             };
-            self.status
+            self._status
                 .set_network_summary(Some(iface), rx_per_s, tx_per_s, drops_per_s);
         } else {
-            self.status.set_network_summary(None, None, None, None);
+            self._status.set_network_summary(None, None, None, None);
         }
         // Mark degradation if any interface saw drops
         let any_drops = self
             .previous
             .iter()
             .any(|(_, snap)| snap.rx_dropped > 0 || snap.tx_dropped > 0);
-        self.status.set_network_degraded(any_drops);
+        self._status.set_network_degraded(any_drops);
 
         // TCP retransmissions from /proc/net/netstat (TCPSegRetrans)
         if let Some(retrans_total) = read_tcp_retrans() {
@@ -188,7 +188,7 @@ impl Collector for NetworkCollector {
                     .network_degradation_retrans
                     .set(if delta > 0 { 1.0 } else { 0.0 });
                 if delta > 0 {
-                    self.status.set_network_degraded(true);
+                    self._status.set_network_degraded(true);
                 }
             }
             self.prev_tcp_retrans = Some(retrans_total);

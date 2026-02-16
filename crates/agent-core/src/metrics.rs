@@ -1,7 +1,7 @@
 // ESNODE | Source Available BUSL-1.1 | Copyright (c) 2024 Estimatedstocks AB
 use anyhow::Context;
 use prometheus::{
-    proto::MetricFamily, CounterVec, Encoder, Gauge, GaugeVec, IntCounter, IntCounterVec, Opts,
+    proto::MetricFamily, Counter, CounterVec, Encoder, Gauge, GaugeVec, IntCounter, IntCounterVec, Opts,
     Registry, TextEncoder,
 };
 
@@ -146,6 +146,24 @@ pub struct MetricsRegistry {
     pub policy_enforced_total: IntCounterVec,
     pub rca_detections_total: IntCounterVec,
     pub gpu_failure_risk_score: GaugeVec,
+    pub iot_sensor_value: GaugeVec,
+    
+    // PUE (Power Usage Effectiveness) Metrics
+    pub pue_ratio: Gauge,
+    pub pue_it_power_watts: Gauge,
+    pub pue_facility_power_watts: Gauge,
+    pub pue_efficiency_percent: Gauge,
+    pub pue_overhead_watts: Gauge,
+    
+    // eBPF High-Frequency Performance Metrics
+    pub ebpf_cpu_cycles_avg: Gauge,
+    pub ebpf_cpu_instructions_avg: Gauge,
+    pub ebpf_instructions_per_cycle: Gauge,
+    pub ebpf_l1_cache_misses_total: Counter,
+    pub ebpf_llc_misses_total: Counter,
+    pub ebpf_power_mw_avg: Gauge,
+    pub ebpf_energy_uj_total: Counter,
+    pub ebpf_sample_count: Counter,
 }
 
 impl MetricsRegistry {
@@ -987,6 +1005,69 @@ impl MetricsRegistry {
             ),
             &["uuid"],
         )?;
+        let iot_sensor_value = GaugeVec::new(
+            Opts::new(
+                "esnode_iot_sensor_value",
+                "IoT sensor reading from configured drivers",
+            ),
+            &["driver_id", "sensor_type", "unit", "param"],
+        )?;
+
+        // PUE Metrics
+        let pue_ratio = Gauge::new(
+            "esnode_pue_ratio",
+            "Power Usage Effectiveness (Total Facility Power / IT Equipment Power)",
+        )?;
+        let pue_it_power_watts = Gauge::new(
+            "esnode_pue_it_power_watts",
+            "IT equipment power consumption in watts",
+        )?;
+        let pue_facility_power_watts = Gauge::new(
+            "esnode_pue_facility_power_watts",
+            "Total facility power consumption in watts",
+        )?;
+        let pue_efficiency_percent = Gauge::new(
+            "esnode_pue_efficiency_percent",
+            "Data center efficiency as percentage (IT Power / Total Power * 100)",
+        )?;
+        let pue_overhead_watts = Gauge::new(
+            "esnode_pue_overhead_watts",
+            "Non-IT power consumption (cooling, lighting, etc.) in watts",
+        )?;
+
+        // eBPF High-Frequency Metrics
+        let ebpf_cpu_cycles_avg = Gauge::new(
+            "esnode_ebpf_cpu_cycles_avg",
+            "Average CPU cycles per sample (eBPF high-frequency monitoring)",
+        )?;
+        let ebpf_cpu_instructions_avg = Gauge::new(
+            "esnode_ebpf_cpu_instructions_avg",
+            "Average CPU instructions retired per sample (eBPF)",
+        )?;
+        let ebpf_instructions_per_cycle = Gauge::new(
+            "esnode_ebpf_instructions_per_cycle",
+            "Instructions per cycle (IPC) from eBPF perf counters",
+        )?;
+        let ebpf_l1_cache_misses_total = Counter::new(
+            "esnode_ebpf_l1_cache_misses_total",
+            "Total L1 data cache misses from eBPF",
+        )?;
+        let ebpf_llc_misses_total = Counter::new(
+            "esnode_ebpf_llc_misses_total",
+            "Total last-level cache misses from eBPF",
+        )?;
+        let ebpf_power_mw_avg = Gauge::new(
+            "esnode_ebpf_power_mw_avg",
+            "Average power consumption in milliwatts from eBPF/RAPL",
+        )?;
+        let ebpf_energy_uj_total = Counter::new(
+            "esnode_ebpf_energy_uj_total",
+            "Total energy consumed in microjoules from eBPF/RAPL",
+        )?;
+        let ebpf_sample_count = Counter::new(
+            "esnode_ebpf_sample_count",
+            "Number of eBPF samples collected",
+        )?;
 
         let metrics = Self {
             registry,
@@ -1123,6 +1204,20 @@ impl MetricsRegistry {
             policy_enforced_total,
             rca_detections_total,
             gpu_failure_risk_score,
+            iot_sensor_value,
+            pue_ratio,
+            pue_it_power_watts,
+            pue_facility_power_watts,
+            pue_efficiency_percent,
+            pue_overhead_watts,
+            ebpf_cpu_cycles_avg,
+            ebpf_cpu_instructions_avg,
+            ebpf_instructions_per_cycle,
+            ebpf_l1_cache_misses_total,
+            ebpf_llc_misses_total,
+            ebpf_power_mw_avg,
+            ebpf_energy_uj_total,
+            ebpf_sample_count,
         };
 
         metrics.register_all()?;
@@ -1243,8 +1338,6 @@ impl MetricsRegistry {
             Box::new(self.pcie_link_width.clone()),
             Box::new(self.pcie_link_gen.clone()),
             Box::new(self.nvswitch_errors_total.clone()),
-            Box::new(self.gpu_degradation_throttle.clone()),
-            Box::new(self.gpu_degradation_ecc.clone()),
             Box::new(self.fabric_latency_microseconds.clone()),
             Box::new(self.cpu_package_energy_joules_total.clone()),
             Box::new(self.cpu_core_power_watts.clone()),
@@ -1266,6 +1359,20 @@ impl MetricsRegistry {
             Box::new(self.policy_enforced_total.clone()),
             Box::new(self.rca_detections_total.clone()),
             Box::new(self.gpu_failure_risk_score.clone()),
+            Box::new(self.iot_sensor_value.clone()),
+            Box::new(self.pue_ratio.clone()),
+            Box::new(self.pue_it_power_watts.clone()),
+            Box::new(self.pue_facility_power_watts.clone()),
+            Box::new(self.pue_efficiency_percent.clone()),
+            Box::new(self.pue_overhead_watts.clone()),
+            Box::new(self.ebpf_cpu_cycles_avg.clone()),
+            Box::new(self.ebpf_cpu_instructions_avg.clone()),
+            Box::new(self.ebpf_instructions_per_cycle.clone()),
+            Box::new(self.ebpf_l1_cache_misses_total.clone()),
+            Box::new(self.ebpf_llc_misses_total.clone()),
+            Box::new(self.ebpf_power_mw_avg.clone()),
+            Box::new(self.ebpf_energy_uj_total.clone()),
+            Box::new(self.ebpf_sample_count.clone()),
         ];
 
         for collector in regs.drain(..) {
